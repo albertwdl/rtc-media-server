@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"rtc-media-server/internal/audioenhancement"
 	"rtc-media-server/internal/websocket"
 )
 
@@ -33,8 +34,18 @@ func main() {
 		log.Fatalf("准备本地 WSS 证书失败: %v", err)
 	}
 
+	enhancementEngine, err := audioenhancement.NewMockEngine("")
+	if err != nil {
+		log.Fatalf("创建语音增强模拟引擎失败: %v", err)
+	}
+	defer func() {
+		if err := enhancementEngine.Close(); err != nil {
+			log.Printf("关闭语音增强模拟引擎失败: %v", err)
+		}
+	}()
+
 	server, err := websocket.NewServer(cfg, websocket.ServerCallbacks{
-		OnSession: bindSessionCallbacks,
+		OnSession: enhancementEngine.BindSession,
 		OnError: func(err error) {
 			log.Printf("WebSocket 服务错误: %v", err)
 		},
@@ -52,27 +63,6 @@ func main() {
 		log.Fatalf("WebSocket 服务退出: %v", err)
 	}
 	log.Println("rtc-media-server demo 已停止")
-}
-
-func bindSessionCallbacks(session *websocket.Session) {
-	log.Printf("客户端已连接: %s", session.ID())
-	session.SetCallbacks(websocket.SessionCallbacks{
-		OnStreamEvent: func(session *websocket.Session, event websocket.StreamEvent) {
-			log.Printf("stream事件 client=%s type=%s payload_bytes=%d", session.ID(), event.Type, len(event.RawJSON))
-		},
-		OnStreamPCM: func(session *websocket.Session, pcm []byte) {
-			log.Printf("stream PCM client=%s bytes=%d", session.ID(), len(pcm))
-		},
-		OnCommand: func(session *websocket.Session, payload []byte) {
-			log.Printf("cmd消息 client=%s payload=%s", session.ID(), string(payload))
-		},
-		OnDisconnected: func(session *websocket.Session, err error) {
-			log.Printf("客户端已断开: %s err=%v", session.ID(), err)
-		},
-		OnError: func(session *websocket.Session, err error) {
-			log.Printf("客户端错误: %s err=%v", session.ID(), err)
-		},
-	})
 }
 
 func ensureDemoCertificate(certFile, keyFile string) error {

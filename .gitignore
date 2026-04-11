@@ -30,6 +30,9 @@ go.work.sum
 # Local demo TLS certificates
 configs/certs/
 
+# Local runtime output
+runtime/
+
 # Editor/IDE
 # .idea/
 # .vscode/

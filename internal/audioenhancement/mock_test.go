@@ -1,0 +1,32 @@
+package audioenhancement
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestMockEngineSavePCM(t *testing.T) {
+	dir := t.TempDir()
+	engine, err := NewMockEngine(dir)
+	if err != nil {
+		t.Fatalf("NewMockEngine: %v", err)
+	}
+	defer engine.Close()
+
+	if err := engine.SavePCM("client/a", []byte{0x01, 0x02}); err != nil {
+		t.Fatalf("SavePCM first: %v", err)
+	}
+	if err := engine.SavePCM("client/a", []byte{0x03}); err != nil {
+		t.Fatalf("SavePCM second: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "client_a.pcm"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	want := []byte{0x01, 0x02, 0x03}
+	if string(got) != string(want) {
+		t.Fatalf("pcm = %#v, want %#v", got, want)
+	}
+}
