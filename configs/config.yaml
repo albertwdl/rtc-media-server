@@ -3,7 +3,7 @@ websocket:
   port: 8443
   stream_path: "/v1/stream"
   cmd_path: "/v1/cmd"
-  client_id_header: "X-Instance-Id"
+  client_id_header: "X-Hardware-Id"
   tls:
     cert_file: "configs/certs/dev-server.crt"
     key_file: "configs/certs/dev-server.key"

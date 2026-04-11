@@ -13,7 +13,7 @@ import (
 const (
 	DefaultStreamPath     = "/v1/stream"
 	DefaultCmdPath        = "/v1/cmd"
-	DefaultClientIDHeader = "X-Instance-Id"
+	DefaultClientIDHeader = "X-Hardware-Id"
 )
 
 // Config 定义 WebSocket 服务端监听、TLS、超时、RTT 和 stream 载荷配置。

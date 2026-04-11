@@ -25,7 +25,7 @@ websocket:
   port: 9443
   stream_path: "/v1/stream"
   cmd_path: "/v1/cmd"
-  client_id_header: "X-Instance-Id"
+  client_id_header: "X-Hardware-Id"
   tls:
     cert_file: "` + cert + `"
     key_file: "` + key + `"
@@ -49,7 +49,7 @@ websocket:
 	if cfg.StreamPath != "/v1/stream" {
 		t.Fatalf("StreamPath = %q", cfg.StreamPath)
 	}
-	if cfg.ClientIDHeader != "X-Instance-Id" {
+	if cfg.ClientIDHeader != "X-Hardware-Id" {
 		t.Fatalf("ClientIDHeader = %q", cfg.ClientIDHeader)
 	}
 	if cfg.RTTInterval != 5*time.Second {

@@ -53,7 +53,7 @@ type Server struct {
 	sessions map[string]*Session
 }
 
-// Session 表示一个由 X-Instance-Id 标识的客户端会话。
+// Session 表示一个由 X-Hardware-Id 标识的客户端会话。
 // 同一个客户端的 stream 和 cmd 两条连接会绑定到同一个 Session。
 type Session struct {
 	server *Server
