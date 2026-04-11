@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# Local demo TLS certificates
+configs/certs/
+
 # Editor/IDE
 # .idea/
 # .vscode/

@@ -1,0 +1,16 @@
+websocket:
+  listen: "0.0.0.0"
+  port: 8443
+  stream_path: "/v1/stream"
+  cmd_path: "/v1/cmd"
+  client_id_header: "X-Instance-Id"
+  tls:
+    cert_file: "configs/certs/dev-server.crt"
+    key_file: "configs/certs/dev-server.key"
+  rtt_interval: "10s"
+  read_timeout: "30s"
+  write_timeout: "10s"
+  max_message_bytes: 1048576
+  stream:
+    sample_rate: 8000
+    channels: 1
