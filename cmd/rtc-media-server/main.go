@@ -8,7 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
-	"log"
+	"log/slog"
 	"math/big"
 	"net"
 	"os"
@@ -18,51 +18,73 @@ import (
 	"syscall"
 	"time"
 
+	"rtc-media-server/internal/application"
 	"rtc-media-server/internal/audioenhancement"
+	"rtc-media-server/internal/media"
+	"rtc-media-server/internal/pipeline"
+	"rtc-media-server/internal/session"
+	"rtc-media-server/internal/vad"
 	"rtc-media-server/internal/websocket"
 )
 
 const configPath = "configs/config.yaml"
 
 func main() {
+	logger := slog.Default()
+
 	cfg, err := websocket.LoadConfig(configPath)
 	if err != nil {
-		log.Fatalf("加载配置失败: %v", err)
+		fatal(logger, "加载配置失败", err)
 	}
 
 	if err := ensureDemoCertificate(cfg.TLS.CertFile, cfg.TLS.KeyFile); err != nil {
-		log.Fatalf("准备本地 WSS 证书失败: %v", err)
+		fatal(logger, "准备本地 WSS 证书失败", err)
 	}
 
-	enhancementEngine, err := audioenhancement.NewMockEngine("")
-	if err != nil {
-		log.Fatalf("创建语音增强模拟引擎失败: %v", err)
-	}
-	defer func() {
-		if err := enhancementEngine.Close(); err != nil {
-			log.Printf("关闭语音增强模拟引擎失败: %v", err)
-		}
-	}()
-
-	server, err := websocket.NewServer(cfg, websocket.ServerCallbacks{
-		OnSession: enhancementEngine.BindSession,
-		OnError: func(err error) {
-			log.Printf("WebSocket 服务错误: %v", err)
+	sessionManager := session.NewManager(session.Config{
+		UplinkQueueSize:   32,
+		DownlinkQueueSize: 32,
+		CloseTimeout:      3 * time.Second,
+		TargetFormat:      media.DefaultPCM16Format(),
+	}, session.Dependencies{
+		Logger: logger,
+		NewUplinkStages: func(session *session.Session) ([]media.Stage, error) {
+			engine, err := audioenhancement.NewMockEngine("", session.Logger())
+			if err != nil {
+				return nil, err
+			}
+			return []media.Stage{
+				engine,
+				vad.NewMockStage(session.Logger()),
+			}, nil
+		},
+		NewDownlinkStages: func(session *session.Session) ([]media.Stage, error) {
+			return []media.Stage{pipeline.NewPCM16Normalizer(media.DefaultPCM16Format())}, nil
+		},
+		ApplicationSink: application.NewMockSink(logger),
+		OnSession: func(session *session.Session) {
+			session.Logger().Info("client_id=" + session.ID() + " session ready")
 		},
 	})
+
+	server, err := websocket.NewServer(cfg, sessionManager, logger)
 	if err != nil {
-		log.Fatalf("创建 WebSocket 服务失败: %v", err)
+		fatal(logger, "创建 WebSocket 服务失败", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	addr := net.JoinHostPort(cfg.Listen, strconv.Itoa(cfg.Port))
-	log.Printf("rtc-media-server demo 已启动: wss://%s%s, cmd: wss://%s%s", addr, cfg.StreamPath, addr, cfg.CmdPath)
+	logger.Info(
+		"rtc-media-server demo 已启动",
+		slog.String("stream_addr", "wss://"+addr+cfg.StreamPath),
+		slog.String("cmd_addr", "wss://"+addr+cfg.CmdPath),
+	)
 	if err := server.Start(ctx); err != nil {
-		log.Fatalf("WebSocket 服务退出: %v", err)
+		fatal(logger, "WebSocket 服务退出", err)
 	}
-	log.Println("rtc-media-server demo 已停止")
+	logger.Info("rtc-media-server demo 已停止")
 }
 
 func ensureDemoCertificate(certFile, keyFile string) error {
@@ -72,7 +94,7 @@ func ensureDemoCertificate(certFile, keyFile string) error {
 		return nil
 	}
 	if certExists != keyExists {
-		log.Printf("检测到证书或私钥缺失，将重新生成本地 demo 证书: cert=%s key=%s", certFile, keyFile)
+		slog.Warn("检测到证书或私钥缺失，将重新生成本地 demo 证书", slog.String("cert_file", certFile), slog.String("key_file", keyFile))
 	}
 
 	if err := os.MkdirAll(filepath.Dir(certFile), 0o755); err != nil {
@@ -118,11 +140,16 @@ func ensureDemoCertificate(certFile, keyFile string) error {
 	if err := os.WriteFile(keyFile, keyPEM, 0o600); err != nil {
 		return err
 	}
-	log.Printf("已生成本地 demo WSS 证书: cert=%s key=%s", certFile, keyFile)
+	slog.Info("已生成本地 demo WSS 证书", slog.String("cert_file", certFile), slog.String("key_file", keyFile))
 	return nil
 }
 
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func fatal(logger *slog.Logger, msg string, err error) {
+	logger.Error(msg, slog.Any("error", err))
+	os.Exit(1)
 }

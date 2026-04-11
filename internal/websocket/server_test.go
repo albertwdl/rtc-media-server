@@ -17,122 +17,28 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
 	coderws "github.com/coder/websocket"
+
+	"rtc-media-server/internal/endpoint"
+	"rtc-media-server/internal/media"
+	"rtc-media-server/internal/session"
 )
 
-func TestSessionLifecycleBindsStreamAndCmd(t *testing.T) {
-	var (
-		mu       sync.Mutex
-		sessions []*Session
-	)
-	server, url, _ := newTestTLSServer(t, ServerCallbacks{
-		OnSession: func(session *Session) {
-			mu.Lock()
-			defer mu.Unlock()
-			sessions = append(sessions, session)
-		},
+func TestStreamAppendJSONEntersSessionUplink(t *testing.T) {
+	frameCh := make(chan media.Frame, 1)
+	_, url, _ := newTestTLSServer(t, session.Dependencies{
+		ApplicationSink: media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
+			frameCh <- frame
+			return nil
+		}),
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	streamConn := dialTestWS(t, ctx, url+"/v1/stream", "client-a")
-	defer streamConn.Close(coderws.StatusNormalClosure, "test done")
-	cmdConn := dialTestWS(t, ctx, url+"/v1/cmd", "client-a")
-	defer cmdConn.Close(coderws.StatusNormalClosure, "test done")
-
-	session, ok := server.Session("client-a")
-	if !ok {
-		t.Fatal("expected session")
-	}
-	if session.ID() != "client-a" {
-		t.Fatalf("session id = %q", session.ID())
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-	if len(sessions) != 1 {
-		t.Fatalf("OnSession calls = %d", len(sessions))
-	}
-	if sessions[0] != session {
-		t.Fatal("OnSession returned a different session")
-	}
-}
-
-func TestSessionCallbacksAreIsolated(t *testing.T) {
-	type gotEvent struct {
-		clientID string
-		kind     string
-	}
-	events := make(chan gotEvent, 4)
-	_, url, _ := newTestTLSServer(t, ServerCallbacks{
-		OnSession: func(session *Session) {
-			session.SetCallbacks(SessionCallbacks{
-				OnStreamPCM: func(session *Session, _ []byte) {
-					events <- gotEvent{clientID: session.ID(), kind: "pcm"}
-				},
-				OnCommand: func(session *Session, _ []byte) {
-					events <- gotEvent{clientID: session.ID(), kind: "cmd"}
-				},
-			})
-		},
-	})
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	clientA := dialTestWS(t, ctx, url+"/v1/stream", "client-a")
-	defer clientA.Close(coderws.StatusNormalClosure, "test done")
-	clientB := dialTestWS(t, ctx, url+"/v1/cmd", "client-b")
-	defer clientB.Close(coderws.StatusNormalClosure, "test done")
-
-	alaw := []byte{0xD5, 0x55}
-	msg := streamAppendJSON(t, alaw)
-	if err := clientA.Write(ctx, coderws.MessageText, msg); err != nil {
-		t.Fatalf("write stream: %v", err)
-	}
-	if err := clientB.Write(ctx, coderws.MessageText, []byte(`{"action":"start"}`)); err != nil {
-		t.Fatalf("write cmd: %v", err)
-	}
-
-	got := map[gotEvent]bool{}
-	for len(got) < 2 {
-		select {
-		case event := <-events:
-			got[event] = true
-		case <-ctx.Done():
-			t.Fatal("timed out waiting for callbacks")
-		}
-	}
-	if !got[gotEvent{clientID: "client-a", kind: "pcm"}] {
-		t.Fatalf("missing client-a pcm callback: %#v", got)
-	}
-	if !got[gotEvent{clientID: "client-b", kind: "cmd"}] {
-		t.Fatalf("missing client-b cmd callback: %#v", got)
-	}
-}
-
-func TestStreamAppendJSONTriggersEventAndPCM(t *testing.T) {
-	eventCh := make(chan StreamEvent, 1)
-	pcmCh := make(chan []byte, 1)
-	_, url, _ := newTestTLSServer(t, ServerCallbacks{
-		OnSession: func(session *Session) {
-			session.SetCallbacks(SessionCallbacks{
-				OnStreamEvent: func(_ *Session, event StreamEvent) {
-					eventCh <- event
-				},
-				OnStreamPCM: func(_ *Session, pcm []byte) {
-					pcmCh <- pcm
-				},
-			})
-		},
-	})
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-c")
+	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-a")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
 
 	alaw := []byte{0xD5, 0x55}
@@ -141,80 +47,71 @@ func TestStreamAppendJSONTriggersEventAndPCM(t *testing.T) {
 	}
 
 	select {
-	case event := <-eventCh:
-		if event.Type != "input_audio_buffer.append" {
-			t.Fatalf("event type = %q", event.Type)
+	case frame := <-frameCh:
+		if frame.SessionID != "client-a" {
+			t.Fatalf("SessionID = %q", frame.SessionID)
 		}
-		if event.AudioBase64 == "" {
-			t.Fatal("expected audio base64")
+		if frame.Direction != media.DirectionUplink {
+			t.Fatalf("Direction = %q", frame.Direction)
 		}
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for stream event")
-	}
-	select {
-	case pcm := <-pcmCh:
-		if len(pcm) != len(alaw)*2 {
-			t.Fatalf("pcm len = %d", len(pcm))
+		if frame.Format.Codec != media.CodecPCM16LE {
+			t.Fatalf("Codec = %q", frame.Format.Codec)
+		}
+		if len(frame.Payload) != len(alaw)*2 {
+			t.Fatalf("pcm len = %d", len(frame.Payload))
 		}
 	case <-ctx.Done():
-		t.Fatal("timed out waiting for pcm")
+		t.Fatal("timed out waiting for uplink frame")
 	}
 }
 
-func TestNonAppendStreamJSONOnlyTriggersEvent(t *testing.T) {
-	eventCh := make(chan StreamEvent, 1)
-	pcmCh := make(chan []byte, 1)
-	_, url, _ := newTestTLSServer(t, ServerCallbacks{
-		OnSession: func(session *Session) {
-			session.SetCallbacks(SessionCallbacks{
-				OnStreamEvent: func(_ *Session, event StreamEvent) {
-					eventCh <- event
-				},
-				OnStreamPCM: func(_ *Session, pcm []byte) {
-					pcmCh <- pcm
-				},
-			})
+func TestNonAppendStreamJSONDoesNotEmitMedia(t *testing.T) {
+	frameCh := make(chan media.Frame, 1)
+	eventCh := make(chan string, 1)
+	_, url, _ := newTestTLSServer(t, session.Dependencies{
+		ApplicationSink: media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
+			frameCh <- frame
+			return nil
+		}),
+		OnEvent: func(_ *session.Session, event endpoint.Event) {
+			eventCh <- event.Type
 		},
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-d")
+	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-b")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
 
 	if err := conn.Write(ctx, coderws.MessageText, []byte(`{"type":"input_audio_buffer.commit"}`)); err != nil {
 		t.Fatalf("write stream: %v", err)
 	}
 	select {
-	case event := <-eventCh:
-		if event.Type != "input_audio_buffer.commit" {
-			t.Fatalf("event type = %q", event.Type)
+	case got := <-eventCh:
+		if got != "input_audio_buffer.commit" {
+			t.Fatalf("event type = %q", got)
 		}
 	case <-ctx.Done():
 		t.Fatal("timed out waiting for stream event")
 	}
 	select {
-	case <-pcmCh:
-		t.Fatal("unexpected pcm callback")
+	case <-frameCh:
+		t.Fatal("unexpected media frame")
 	case <-time.After(100 * time.Millisecond):
 	}
 }
 
-func TestInvalidStreamJSONReportsSessionError(t *testing.T) {
+func TestInvalidStreamJSONReportsError(t *testing.T) {
 	errCh := make(chan error, 1)
-	_, url, _ := newTestTLSServer(t, ServerCallbacks{
-		OnSession: func(session *Session) {
-			session.SetCallbacks(SessionCallbacks{
-				OnError: func(_ *Session, err error) {
-					errCh <- err
-				},
-			})
+	_, url, _ := newTestTLSServer(t, session.Dependencies{
+		OnError: func(_ *session.Session, err error) {
+			errCh <- err
 		},
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-e")
+	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-c")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
 
 	if err := conn.Write(ctx, coderws.MessageText, []byte("not-json")); err != nil {
@@ -230,29 +127,29 @@ func TestInvalidStreamJSONReportsSessionError(t *testing.T) {
 	}
 }
 
-func TestSessionSendStreamPCMEncodesResponseAudioDelta(t *testing.T) {
-	sessionCh := make(chan *Session, 1)
-	_, url, _ := newTestTLSServer(t, ServerCallbacks{
-		OnSession: func(session *Session) {
+func TestDownlinkPipelineSendsResponseAudioDelta(t *testing.T) {
+	sessionCh := make(chan *session.Session, 1)
+	_, url, _ := newTestTLSServer(t, session.Dependencies{
+		OnSession: func(session *session.Session) {
 			sessionCh <- session
 		},
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-f")
+	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-d")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
 
-	var session *Session
+	var sess *session.Session
 	select {
-	case session = <-sessionCh:
+	case sess = <-sessionCh:
 	case <-ctx.Done():
 		t.Fatal("timed out waiting for session")
 	}
 
 	pcm := []byte{0x00, 0x00, 0x00, 0x01}
-	if err := session.SendStreamPCM(ctx, pcm); err != nil {
-		t.Fatalf("SendStreamPCM: %v", err)
+	if err := sess.EnqueueDownlink(ctx, media.Frame{Payload: pcm, Format: media.DefaultPCM16Format()}); err != nil {
+		t.Fatalf("EnqueueDownlink: %v", err)
 	}
 	_, got, err := conn.Read(ctx)
 	if err != nil {
@@ -278,23 +175,21 @@ func TestSessionSendStreamPCMEncodesResponseAudioDelta(t *testing.T) {
 	}
 }
 
-func TestCommandCallbackAndSessionSendCommand(t *testing.T) {
+func TestCommandHookAndSessionSendCommand(t *testing.T) {
 	cmdCh := make(chan []byte, 1)
-	sessionCh := make(chan *Session, 1)
-	_, url, _ := newTestTLSServer(t, ServerCallbacks{
-		OnSession: func(session *Session) {
-			session.SetCallbacks(SessionCallbacks{
-				OnCommand: func(_ *Session, payload []byte) {
-					cmdCh <- payload
-				},
-			})
+	sessionCh := make(chan *session.Session, 1)
+	_, url, _ := newTestTLSServer(t, session.Dependencies{
+		OnSession: func(session *session.Session) {
 			sessionCh <- session
+		},
+		OnCommand: func(_ *session.Session, payload []byte) {
+			cmdCh <- payload
 		},
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	conn := dialTestWS(t, ctx, url+"/v1/cmd", "client-g")
+	conn := dialTestWS(t, ctx, url+"/v1/cmd", "client-e")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
 
 	if err := conn.Write(ctx, coderws.MessageText, []byte(`{"action":"start"}`)); err != nil {
@@ -309,8 +204,8 @@ func TestCommandCallbackAndSessionSendCommand(t *testing.T) {
 		t.Fatal("timed out waiting for cmd callback")
 	}
 
-	session := <-sessionCh
-	if err := session.SendCommand(ctx, []byte(`{"action":"stop"}`)); err != nil {
+	sess := <-sessionCh
+	if err := sess.SendCommand(ctx, []byte(`{"action":"stop"}`)); err != nil {
 		t.Fatalf("SendCommand: %v", err)
 	}
 	_, got, err := conn.Read(ctx)
@@ -323,7 +218,7 @@ func TestCommandCallbackAndSessionSendCommand(t *testing.T) {
 }
 
 func TestMissingClientIDRejected(t *testing.T) {
-	_, url, client := newTestTLSServer(t, ServerCallbacks{})
+	_, url, client := newTestTLSServer(t, session.Dependencies{})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -339,15 +234,15 @@ func TestMissingClientIDRejected(t *testing.T) {
 }
 
 func TestDuplicateChannelRejected(t *testing.T) {
-	_, url, client := newTestTLSServer(t, ServerCallbacks{})
+	_, url, client := newTestTLSServer(t, session.Dependencies{})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	first := dialTestWS(t, ctx, url+"/v1/stream", "client-h")
+	first := dialTestWS(t, ctx, url+"/v1/stream", "client-f")
 	defer first.Close(coderws.StatusNormalClosure, "test done")
 
 	headers := http.Header{}
-	headers.Set(DefaultClientIDHeader, "client-h")
+	headers.Set(DefaultClientIDHeader, "client-f")
 	_, resp, err := coderws.Dial(ctx, url+"/v1/stream", &coderws.DialOptions{
 		HTTPClient: client,
 		HTTPHeader: headers,
@@ -361,22 +256,29 @@ func TestDuplicateChannelRejected(t *testing.T) {
 }
 
 func TestRTTUsesOnlyStreamChannel(t *testing.T) {
-	server, url, _ := newTestTLSServer(t, ServerCallbacks{})
+	sessionCh := make(chan *session.Session, 1)
+	_, url, _ := newTestTLSServer(t, session.Dependencies{
+		OnSession: func(session *session.Session) {
+			sessionCh <- session
+		},
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	cmdConn := dialTestWS(t, ctx, url+"/v1/cmd", "client-i")
+	cmdConn := dialTestWS(t, ctx, url+"/v1/cmd", "client-g")
 	defer cmdConn.Close(coderws.StatusNormalClosure, "test done")
 
-	session, ok := server.Session("client-i")
-	if !ok {
-		t.Fatal("expected session")
+	var sess *session.Session
+	select {
+	case sess = <-sessionCh:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for session")
 	}
-	if _, err := session.MeasureRTT(ctx); err == nil {
+	if _, err := sess.MeasureRTT(ctx); err == nil {
 		t.Fatal("expected stream channel missing error")
 	}
 
-	streamConn := dialTestWS(t, ctx, url+"/v1/stream", "client-i")
+	streamConn := dialTestWS(t, ctx, url+"/v1/stream", "client-g")
 	defer streamConn.Close(coderws.StatusNormalClosure, "test done")
 	readCtx, readCancel := context.WithCancel(context.Background())
 	defer readCancel()
@@ -389,20 +291,16 @@ func TestRTTUsesOnlyStreamChannel(t *testing.T) {
 		}
 	}()
 
-	rtt, err := server.MeasureRTT(ctx, "client-i")
+	rtt, err := sess.MeasureRTT(ctx)
 	if err != nil {
 		t.Fatalf("MeasureRTT: %v", err)
 	}
 	if rtt <= 0 {
 		t.Fatalf("rtt = %s", rtt)
 	}
-	cached, ok := session.RTT()
+	cached, ok := sess.RTT()
 	if !ok || cached <= 0 {
 		t.Fatalf("cached rtt = %s ok=%v", cached, ok)
-	}
-
-	if err := session.Disconnect(ctx, "test disconnect"); err != nil {
-		t.Fatalf("Disconnect: %v", err)
 	}
 }
 
@@ -421,7 +319,7 @@ func streamAppendJSON(t *testing.T, alaw []byte) []byte {
 	return payload
 }
 
-func newTestTLSServer(t *testing.T, callbacks ServerCallbacks) (*Server, string, *http.Client) {
+func newTestTLSServer(t *testing.T, deps session.Dependencies) (*Server, string, *http.Client) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -430,7 +328,12 @@ func newTestTLSServer(t *testing.T, callbacks ServerCallbacks) (*Server, string,
 	cfg.TLS.CertFile = cert
 	cfg.TLS.KeyFile = key
 
-	server, err := NewServer(cfg, callbacks)
+	manager := session.NewManager(session.Config{
+		UplinkQueueSize:   8,
+		DownlinkQueueSize: 8,
+		TargetFormat:      media.DefaultPCM16Format(),
+	}, deps)
+	server, err := NewServer(cfg, manager, nil)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}

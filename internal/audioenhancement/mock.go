@@ -1,20 +1,22 @@
 package audioenhancement
 
 import (
+	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
-	"rtc-media-server/internal/websocket"
+	"rtc-media-server/internal/media"
 )
 
 // MockEngine 模拟 AEC+AGC+ANS 语音增强引擎。
-// 当前实现不做真实算法处理，只把 websocket 回调得到的 PCM 追加保存到本地文件。
+// 当前实现不做真实算法处理，只把经过该 stage 的 PCM 追加保存到本地文件。
 type MockEngine struct {
 	outputDir string
+	logger    *slog.Logger
 
 	mu    sync.Mutex
 	files map[string]*os.File
@@ -22,46 +24,41 @@ type MockEngine struct {
 
 // NewMockEngine 创建一个模拟 AEC+AGC+ANS 语音增强引擎。
 // outputDir 用于存放每个 client 独立的 PCM 文件。
-func NewMockEngine(outputDir string) (*MockEngine, error) {
+func NewMockEngine(outputDir string, logger *slog.Logger) (*MockEngine, error) {
 	if outputDir == "" {
 		outputDir = filepath.Join("runtime", "pcm")
+	}
+	if logger == nil {
+		logger = slog.Default()
 	}
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return nil, fmt.Errorf("创建 PCM 输出目录失败: %w", err)
 	}
 	return &MockEngine{
 		outputDir: outputDir,
+		logger:    logger,
 		files:     make(map[string]*os.File),
 	}, nil
 }
 
-// BindSession 把某个 websocket Session 的回调注册到语音增强引擎。
-func (e *MockEngine) BindSession(session *websocket.Session) {
-	log.Printf("语音增强模拟引擎绑定客户端: %s", session.ID())
-	session.SetCallbacks(websocket.SessionCallbacks{
-		OnStreamEvent: func(session *websocket.Session, event websocket.StreamEvent) {
-			log.Printf("stream事件 client=%s type=%s payload_bytes=%d", session.ID(), event.Type, len(event.RawJSON))
-		},
-		OnStreamPCM: func(session *websocket.Session, pcm []byte) {
-			if err := e.SavePCM(session.ID(), pcm); err != nil {
-				log.Printf("保存PCM失败 client=%s err=%v", session.ID(), err)
-				return
-			}
-			log.Printf("已保存PCM client=%s bytes=%d file=%s", session.ID(), len(pcm), e.filePath(session.ID()))
-		},
-		OnCommand: func(session *websocket.Session, payload []byte) {
-			log.Printf("cmd消息 client=%s payload=%s", session.ID(), string(payload))
-		},
-		OnDisconnected: func(session *websocket.Session, err error) {
-			log.Printf("客户端已断开: %s err=%v", session.ID(), err)
-			if closeErr := e.CloseSession(session.ID()); closeErr != nil {
-				log.Printf("关闭PCM文件失败 client=%s err=%v", session.ID(), closeErr)
-			}
-		},
-		OnError: func(session *websocket.Session, err error) {
-			log.Printf("客户端错误: %s err=%v", session.ID(), err)
-		},
-	})
+func (e *MockEngine) Name() string { return "aec_agc_ans_mock" }
+
+// Process 实现 media.Stage，模拟 AEC+AGC+ANS 处理并透传媒体帧。
+func (e *MockEngine) Process(ctx context.Context, frame media.Frame) (media.Frame, error) {
+	if frame.Format.Codec == media.CodecPCM16LE {
+		if err := e.SavePCM(frame.SessionID, frame.Payload); err != nil {
+			return frame, err
+		}
+		e.logger.Info(
+			"client_id="+frame.SessionID+" audio enhancement processed",
+			slog.String("client_id", frame.SessionID),
+			slog.String("direction", string(frame.Direction)),
+			slog.String("codec", frame.Format.Codec),
+			slog.Int("bytes", len(frame.Payload)),
+			slog.String("file", e.filePath(frame.SessionID)),
+		)
+	}
+	return frame, nil
 }
 
 // SavePCM 把 PCM 数据追加写入该 client 对应的文件。
@@ -84,7 +81,7 @@ func (e *MockEngine) SavePCM(clientID string, pcm []byte) error {
 }
 
 // Close 关闭语音增强引擎持有的所有 PCM 文件。
-func (e *MockEngine) Close() error {
+func (e *MockEngine) Close(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 

@@ -1,6 +1,7 @@
 package audioenhancement
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,11 +9,11 @@ import (
 
 func TestMockEngineSavePCM(t *testing.T) {
 	dir := t.TempDir()
-	engine, err := NewMockEngine(dir)
+	engine, err := NewMockEngine(dir, nil)
 	if err != nil {
 		t.Fatalf("NewMockEngine: %v", err)
 	}
-	defer engine.Close()
+	defer engine.Close(context.Background())
 
 	if err := engine.SavePCM("client/a", []byte{0x01, 0x02}); err != nil {
 		t.Fatalf("SavePCM first: %v", err)

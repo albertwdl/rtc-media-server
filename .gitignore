@@ -33,6 +33,9 @@ configs/certs/
 # Local runtime output
 runtime/
 
+# macOS metadata
+.DS_Store
+
 # Editor/IDE
 # .idea/
 # .vscode/

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -13,24 +14,11 @@ import (
 	"time"
 
 	coderws "github.com/coder/websocket"
+
+	"rtc-media-server/internal/endpoint"
+	"rtc-media-server/internal/media"
+	"rtc-media-server/internal/session"
 )
-
-// ServerCallbacks 定义服务端级别的回调。
-// OnSession 在某个 client 的第一个通道连接成功后触发，外部通常在这里绑定该 session 的专属回调。
-type ServerCallbacks struct {
-	OnSession func(session *Session)
-	OnError   func(err error)
-}
-
-// SessionCallbacks 定义绑定到单个客户端 Session 的回调。
-// 回调参数中的 Session 可用于获取 clientID、发送数据、断连或查询 RTT。
-type SessionCallbacks struct {
-	OnStreamPCM    func(session *Session, pcm []byte)
-	OnStreamEvent  func(session *Session, event StreamEvent)
-	OnCommand      func(session *Session, payload []byte)
-	OnDisconnected func(session *Session, err error)
-	OnError        func(session *Session, err error)
-}
 
 // StreamEvent 表示 stream 通道收到并解析后的 JSON 事件。
 // RawJSON 保留原始 payload，AudioBase64 用于 input_audio_buffer.append，DeltaBase64 用于 response.audio.delta。
@@ -41,32 +29,30 @@ type StreamEvent struct {
 	DeltaBase64 string
 }
 
-// Server 管理 WSS 监听器以及所有在线客户端 Session。
+// Server 是全局 WebSocket 监听器，负责 WSS 接入并创建每个客户端的 Endpoint。
 type Server struct {
-	cfg       Config
-	callbacks ServerCallbacks
-	httpSrv   *http.Server
-
-	mu       sync.RWMutex
-	started  bool
-	stop     context.CancelFunc
-	sessions map[string]*Session
+	cfg     Config
+	manager *session.Manager
+	logger  *slog.Logger
+	httpSrv *http.Server
+	clients map[string]*clientEndpoint
+	mu      sync.RWMutex
+	started bool
+	stop    context.CancelFunc
 }
 
-// Session 表示一个由 X-Hardware-Id 标识的客户端会话。
-// 同一个客户端的 stream 和 cmd 两条连接会绑定到同一个 Session。
-type Session struct {
-	server *Server
+type clientEndpoint struct {
 	id     string
+	server *Server
 
 	mu            sync.RWMutex
 	stream        *channelConn
 	cmd           *channelConn
 	streamPending bool
 	cmdPending    bool
-	callbacks     SessionCallbacks
-	rtt           time.Duration
-	rttOK         bool
+	session       *session.Session
+	done          chan struct{}
+	closeOnce     sync.Once
 }
 
 type channelConn struct {
@@ -82,8 +68,14 @@ const (
 	cmdChannel    channelKind = "cmd"
 )
 
-// NewServer 根据配置和服务端回调创建 WebSocket 服务端。
-func NewServer(cfg Config, callbacks ServerCallbacks) (*Server, error) {
+// NewServer 创建全局 WebSocket 监听器。
+func NewServer(cfg Config, manager *session.Manager, logger *slog.Logger) (*Server, error) {
+	if manager == nil {
+		return nil, errors.New("websocket session manager is required")
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -92,9 +84,10 @@ func NewServer(cfg Config, callbacks ServerCallbacks) (*Server, error) {
 	}
 
 	s := &Server{
-		cfg:       cfg,
-		callbacks: callbacks,
-		sessions:  make(map[string]*Session),
+		cfg:     cfg,
+		manager: manager,
+		logger:  logger,
+		clients: make(map[string]*clientEndpoint),
 	}
 
 	mux := http.NewServeMux()
@@ -149,7 +142,7 @@ func (s *Server) Start(ctx context.Context) error {
 	return err
 }
 
-// Shutdown 优雅关闭监听器，并关闭所有客户端 Session 的连接。
+// Shutdown 优雅关闭监听器，并关闭所有 WebSocket 客户端连接。
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
 	if s.stop != nil {
@@ -157,150 +150,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	s.mu.Unlock()
 
-	sessions := s.snapshotSessions()
-	for _, session := range sessions {
-		session.close(ctx, coderws.StatusNormalClosure, "server shutdown")
+	for _, client := range s.snapshotClients() {
+		_ = client.Close(ctx, "server shutdown")
 	}
-
 	if s.httpSrv == nil {
 		return nil
 	}
 	return s.httpSrv.Shutdown(ctx)
-}
-
-// Session 根据 clientID 获取当前在线的客户端 Session。
-func (s *Server) Session(clientID string) (*Session, bool) {
-	session := s.getSession(clientID)
-	return session, session != nil
-}
-
-// Disconnect 主动断开指定客户端的所有通道。
-func (s *Server) Disconnect(ctx context.Context, clientID string, reason string) error {
-	session := s.getSession(clientID)
-	if session == nil {
-		return fmt.Errorf("websocket client %q not found", clientID)
-	}
-	return session.Disconnect(ctx, reason)
-}
-
-// SendStreamPCM 通过指定客户端的 stream 通道发送 PCM 数据。
-func (s *Server) SendStreamPCM(ctx context.Context, clientID string, pcm []byte) error {
-	session := s.getSession(clientID)
-	if session == nil {
-		return fmt.Errorf("websocket client %q not found", clientID)
-	}
-	return session.SendStreamPCM(ctx, pcm)
-}
-
-// SendCommand 通过指定客户端的 cmd 通道发送控制消息 JSON。
-func (s *Server) SendCommand(ctx context.Context, clientID string, payload []byte) error {
-	session := s.getSession(clientID)
-	if session == nil {
-		return fmt.Errorf("websocket client %q not found", clientID)
-	}
-	return session.SendCommand(ctx, payload)
-}
-
-// RTT 返回指定客户端最近一次通过 stream 通道测得的 RTT。
-func (s *Server) RTT(clientID string) (time.Duration, bool) {
-	session := s.getSession(clientID)
-	if session == nil {
-		return 0, false
-	}
-	return session.RTT()
-}
-
-// MeasureRTT 只使用指定客户端的 stream 通道执行一次 WebSocket Ping/Pong RTT 测量。
-func (s *Server) MeasureRTT(ctx context.Context, clientID string) (time.Duration, error) {
-	session := s.getSession(clientID)
-	if session == nil {
-		return 0, fmt.Errorf("websocket client %q not found", clientID)
-	}
-	return session.MeasureRTT(ctx)
-}
-
-// ID 返回客户端在握手 Header 中传入的实例 ID。
-func (session *Session) ID() string {
-	return session.id
-}
-
-// SetCallbacks 绑定当前 Session 的专属回调。
-// 该方法可重复调用，后一次设置会整体替换前一次回调配置。
-func (session *Session) SetCallbacks(callbacks SessionCallbacks) {
-	session.mu.Lock()
-	defer session.mu.Unlock()
-	session.callbacks = callbacks
-}
-
-// SendStreamPCM 将 PCM S16LE 编码为 G.711 A-law，再编码为 base64。
-// 最终通过 stream 通道发送 response.audio.delta JSON；WebSocket 帧头和 mask 由底层库处理。
-func (session *Session) SendStreamPCM(ctx context.Context, pcm []byte) error {
-	ch := session.channel(streamChannel)
-	if ch == nil {
-		return fmt.Errorf("websocket client %q stream channel not connected", session.id)
-	}
-
-	alaw := EncodePCMToALaw(pcm)
-	payload, err := json.Marshal(struct {
-		Type  string `json:"type"`
-		Delta string `json:"delta"`
-	}{
-		Type:  "response.audio.delta",
-		Delta: base64.StdEncoding.EncodeToString(alaw),
-	})
-	if err != nil {
-		return err
-	}
-	return session.server.write(ctx, ch, coderws.MessageText, payload)
-}
-
-// SendCommand 通过当前 Session 的 cmd 通道发送控制消息 JSON。
-func (session *Session) SendCommand(ctx context.Context, payload []byte) error {
-	ch := session.channel(cmdChannel)
-	if ch == nil {
-		return fmt.Errorf("websocket client %q cmd channel not connected", session.id)
-	}
-	return session.server.write(ctx, ch, coderws.MessageText, payload)
-}
-
-// MeasureRTT 在当前 Session 的 stream 通道上发送 WebSocket Ping 并等待 Pong。
-// 该方法不使用 cmd 通道；stream 未连接时会返回错误。
-func (session *Session) MeasureRTT(ctx context.Context) (time.Duration, error) {
-	ch := session.channel(streamChannel)
-	if ch == nil {
-		return 0, fmt.Errorf("websocket client %q stream channel not connected", session.id)
-	}
-
-	start := time.Now()
-	ch.writeMu.Lock()
-	err := ch.conn.Ping(ctx)
-	ch.writeMu.Unlock()
-	if err != nil {
-		return 0, err
-	}
-
-	rtt := time.Since(start)
-	session.mu.Lock()
-	session.rtt = rtt
-	session.rttOK = true
-	session.mu.Unlock()
-	return rtt, nil
-}
-
-// RTT 返回当前 Session 最近一次通过 stream 通道测得的 RTT。
-func (session *Session) RTT() (time.Duration, bool) {
-	session.mu.RLock()
-	defer session.mu.RUnlock()
-	return session.rtt, session.rttOK
-}
-
-// Disconnect 主动断开当前 Session 的所有通道。
-func (session *Session) Disconnect(ctx context.Context, reason string) error {
-	if reason == "" {
-		reason = "disconnected by server"
-	}
-	session.close(ctx, coderws.StatusNormalClosure, reason)
-	return nil
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
@@ -318,15 +174,13 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request, kind ch
 		return
 	}
 
-	session, firstChannel, err := s.reserveChannel(clientID, kind)
+	client, err := s.reserveChannel(clientID, kind)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
 
-	conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{
-		InsecureSkipVerify: false,
-	})
+	conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{InsecureSkipVerify: false})
 	if err != nil {
 		s.unregisterChannel(clientID, kind, err)
 		return
@@ -334,23 +188,35 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request, kind ch
 	conn.SetReadLimit(s.cfg.MaxMessageBytes)
 
 	ch := &channelConn{kind: kind, conn: conn}
-	session.setChannel(kind, ch)
-	if firstChannel && s.callbacks.OnSession != nil {
-		s.callbacks.OnSession(session)
-	}
+	client.setChannel(kind, ch)
 
-	if kind == streamChannel {
-		s.readStream(r.Context(), session, ch)
+	session, _, err := s.manager.Attach(r.Context(), client)
+	if err != nil {
+		_ = conn.Close(coderws.StatusInternalError, "create session failed")
+		s.unregisterChannel(clientID, kind, err)
 		return
 	}
-	s.readCmd(r.Context(), session, ch)
+	client.setSession(session)
+
+	s.logger.Info(
+		"client_id="+clientID+" websocket channel connected",
+		slog.String("client_id", clientID),
+		slog.String("protocol", client.Protocol()),
+		slog.String("channel", string(kind)),
+	)
+
+	if kind == streamChannel {
+		s.readStream(r.Context(), client, ch)
+		return
+	}
+	s.readCmd(r.Context(), client, ch)
 }
 
-func (s *Server) readStream(ctx context.Context, session *Session, ch *channelConn) {
+func (s *Server) readStream(ctx context.Context, client *clientEndpoint, ch *channelConn) {
 	var readErr error
 	defer func() {
 		_ = ch.conn.Close(coderws.StatusNormalClosure, "stream channel closed")
-		s.unregisterChannel(session.id, streamChannel, readErr)
+		s.unregisterChannel(client.id, streamChannel, readErr)
 	}()
 
 	for {
@@ -364,37 +230,52 @@ func (s *Server) readStream(ctx context.Context, session *Session, ch *channelCo
 		if msgType != coderws.MessageText && msgType != coderws.MessageBinary {
 			continue
 		}
-		s.handleStreamPayload(session, payload)
+		s.handleStreamPayload(ctx, client, payload)
 	}
 }
 
-func (s *Server) handleStreamPayload(session *Session, payload []byte) {
+func (s *Server) handleStreamPayload(ctx context.Context, client *clientEndpoint, payload []byte) {
 	event, err := decodeStreamEvent(payload)
 	if err != nil {
-		session.reportError(fmt.Errorf("decode stream json: %w", err))
+		client.reportError(ctx, fmt.Errorf("decode stream json: %w", err))
 		return
 	}
 
-	session.dispatchStreamEvent(event)
+	client.reportEvent(ctx, endpoint.Event{
+		Type: event.Type,
+		Raw:  append([]byte(nil), payload...),
+		Fields: map[string]string{
+			"audio": event.AudioBase64,
+			"delta": event.DeltaBase64,
+		},
+	})
 	if event.Type != "input_audio_buffer.append" || event.AudioBase64 == "" {
 		return
 	}
 
-	// stream 通道的业务 payload 是 JSON；audio 字段才是 base64 编码后的 A-law 音频。
 	alaw, err := base64.StdEncoding.DecodeString(event.AudioBase64)
 	if err != nil {
-		session.reportError(fmt.Errorf("decode stream audio base64: %w", err))
+		client.reportError(ctx, fmt.Errorf("decode stream audio base64: %w", err))
 		return
 	}
 	pcm := DecodeALawToPCM(alaw)
-	session.dispatchStreamPCM(pcm)
+	client.reportMedia(ctx, media.Frame{
+		SessionID: client.id,
+		Direction: media.DirectionUplink,
+		Timestamp: time.Now(),
+		Payload:   pcm,
+		Format:    media.DefaultPCM16Format(),
+		Metadata: map[string]string{
+			"source_event": event.Type,
+		},
+	})
 }
 
-func (s *Server) readCmd(ctx context.Context, session *Session, ch *channelConn) {
+func (s *Server) readCmd(ctx context.Context, client *clientEndpoint, ch *channelConn) {
 	var readErr error
 	defer func() {
 		_ = ch.conn.Close(coderws.StatusNormalClosure, "cmd channel closed")
-		s.unregisterChannel(session.id, cmdChannel, readErr)
+		s.unregisterChannel(client.id, cmdChannel, readErr)
 	}()
 
 	for {
@@ -408,7 +289,7 @@ func (s *Server) readCmd(ctx context.Context, session *Session, ch *channelConn)
 		if msgType != coderws.MessageText && msgType != coderws.MessageBinary {
 			continue
 		}
-		session.dispatchCommand(payload)
+		client.reportCommand(ctx, payload)
 	}
 }
 
@@ -429,86 +310,74 @@ func decodeStreamEvent(payload []byte) (StreamEvent, error) {
 	}, nil
 }
 
-func (s *Server) reserveChannel(clientID string, kind channelKind) (*Session, bool, error) {
+func (s *Server) reserveChannel(clientID string, kind channelKind) (*clientEndpoint, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	session := s.sessions[clientID]
-	firstChannel := false
-	if session == nil {
-		session = &Session{server: s, id: clientID}
-		s.sessions[clientID] = session
-		firstChannel = true
+	client := s.clients[clientID]
+	if client == nil {
+		client = &clientEndpoint{id: clientID, server: s, done: make(chan struct{})}
+		s.clients[clientID] = client
 	}
 
-	session.mu.Lock()
-	duplicate := session.channelLocked(kind) != nil || session.pendingLocked(kind)
-	if duplicate {
-		session.mu.Unlock()
-		if firstChannel {
-			delete(s.sessions, clientID)
-		}
-		return nil, false, fmt.Errorf("websocket client %q %s channel already connected", clientID, kind)
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.channelLocked(kind) != nil || client.pendingLocked(kind) {
+		return nil, fmt.Errorf("websocket client %q %s channel already connected", clientID, kind)
 	}
-	session.setPendingLocked(kind, true)
-	session.mu.Unlock()
-
-	return session, firstChannel, nil
+	client.setPendingLocked(kind, true)
+	return client, nil
 }
 
 func (s *Server) unregisterChannel(clientID string, kind channelKind, err error) {
 	var (
-		session      *Session
+		client       *clientEndpoint
 		disconnected bool
 	)
 
 	s.mu.Lock()
-	session = s.sessions[clientID]
-	if session != nil {
-		session.mu.Lock()
+	client = s.clients[clientID]
+	if client != nil {
+		client.mu.Lock()
 		switch kind {
 		case streamChannel:
-			session.stream = nil
-			session.streamPending = false
+			client.stream = nil
+			client.streamPending = false
 		case cmdChannel:
-			session.cmd = nil
-			session.cmdPending = false
+			client.cmd = nil
+			client.cmdPending = false
 		}
-		if session.stream == nil && session.cmd == nil && !session.streamPending && !session.cmdPending {
-			delete(s.sessions, clientID)
+		if client.stream == nil && client.cmd == nil && !client.streamPending && !client.cmdPending {
+			delete(s.clients, clientID)
 			disconnected = true
 		}
-		session.mu.Unlock()
+		client.mu.Unlock()
 	}
 	s.mu.Unlock()
 
-	if session == nil {
+	if client == nil {
 		return
 	}
 	if err != nil && !isNormalClose(err) {
-		session.reportError(err)
+		client.reportError(context.Background(), err)
 	}
 	if disconnected {
-		session.dispatchDisconnected(err)
+		client.closeDone()
+		if sess := client.getSession(); sess != nil {
+			s.manager.Remove(context.Background(), clientID, err)
+		}
 	}
 }
 
-func (session *Session) close(ctx context.Context, code coderws.StatusCode, reason string) {
-	channels := session.channels()
-	for _, ch := range channels {
-		ch.writeMu.Lock()
-		_ = ch.conn.Close(code, reason)
-		ch.writeMu.Unlock()
+func (s *Server) snapshotClients() []*clientEndpoint {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	clients := make([]*clientEndpoint, 0, len(s.clients))
+	for _, client := range s.clients {
+		clients = append(clients, client)
 	}
-}
-
-func (s *Server) write(ctx context.Context, ch *channelConn, msgType coderws.MessageType, payload []byte) error {
-	writeCtx, cancel := context.WithTimeout(ctx, s.cfg.WriteTimeout)
-	defer cancel()
-
-	ch.writeMu.Lock()
-	defer ch.writeMu.Unlock()
-	return ch.conn.Write(writeCtx, msgType, payload)
+	return clients
 }
 
 func (s *Server) rttLoop(ctx context.Context) {
@@ -520,149 +389,208 @@ func (s *Server) rttLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			for _, session := range s.snapshotSessions() {
-				if session.channel(streamChannel) == nil {
+			for _, client := range s.snapshotClients() {
+				if client.channel(streamChannel) == nil {
 					continue
 				}
 				pingCtx, cancel := context.WithTimeout(ctx, s.cfg.WriteTimeout)
-				_, err := session.MeasureRTT(pingCtx)
+				_, err := client.MeasureRTT(pingCtx)
 				cancel()
 				if err != nil {
-					session.reportError(fmt.Errorf("measure rtt: %w", err))
+					client.reportError(ctx, fmt.Errorf("measure rtt: %w", err))
 				}
 			}
 		}
 	}
 }
 
-func (s *Server) snapshotSessions() []*Session {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (client *clientEndpoint) Protocol() string { return "websocket" }
 
-	sessions := make([]*Session, 0, len(s.sessions))
-	for _, session := range s.sessions {
-		sessions = append(sessions, session)
+func (client *clientEndpoint) ID() string { return client.id }
+
+func (client *clientEndpoint) Start(ctx context.Context, sink media.Sink) error {
+	return nil
+}
+
+func (client *clientEndpoint) Consume(ctx context.Context, frame media.Frame) error {
+	ch := client.channel(streamChannel)
+	if ch == nil {
+		return fmt.Errorf("client_id=%s stream channel not connected", client.id)
 	}
-	return sessions
-}
 
-func (s *Server) getSession(clientID string) *Session {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.sessions[clientID]
-}
-
-func (s *Server) reportError(err error) {
-	if s.callbacks.OnError != nil {
-		s.callbacks.OnError(err)
+	alaw := EncodePCMToALaw(frame.Payload)
+	payload, err := json.Marshal(struct {
+		Type  string `json:"type"`
+		Delta string `json:"delta"`
+	}{
+		Type:  "response.audio.delta",
+		Delta: base64.StdEncoding.EncodeToString(alaw),
+	})
+	if err != nil {
+		return err
 	}
+	return client.server.write(ctx, ch, coderws.MessageText, payload)
 }
 
-func (session *Session) setChannel(kind channelKind, ch *channelConn) {
-	session.mu.Lock()
-	defer session.mu.Unlock()
+func (client *clientEndpoint) SendCommand(ctx context.Context, payload []byte) error {
+	ch := client.channel(cmdChannel)
+	if ch == nil {
+		return fmt.Errorf("client_id=%s cmd channel not connected", client.id)
+	}
+	return client.server.write(ctx, ch, coderws.MessageText, payload)
+}
+
+func (client *clientEndpoint) MeasureRTT(ctx context.Context) (time.Duration, error) {
+	ch := client.channel(streamChannel)
+	if ch == nil {
+		return 0, fmt.Errorf("client_id=%s stream channel not connected", client.id)
+	}
+	start := time.Now()
+	ch.writeMu.Lock()
+	err := ch.conn.Ping(ctx)
+	ch.writeMu.Unlock()
+	if err != nil {
+		return 0, err
+	}
+	return time.Since(start), nil
+}
+
+func (client *clientEndpoint) Close(ctx context.Context, reason string) error {
+	if reason == "" {
+		reason = "endpoint closed"
+	}
+	for _, ch := range client.channels() {
+		ch.writeMu.Lock()
+		_ = ch.conn.Close(coderws.StatusNormalClosure, reason)
+		ch.writeMu.Unlock()
+	}
+	client.closeDone()
+	return nil
+}
+
+func (client *clientEndpoint) Done() <-chan struct{} {
+	return client.done
+}
+
+func (s *Server) write(ctx context.Context, ch *channelConn, msgType coderws.MessageType, payload []byte) error {
+	writeCtx, cancel := context.WithTimeout(ctx, s.cfg.WriteTimeout)
+	defer cancel()
+
+	ch.writeMu.Lock()
+	defer ch.writeMu.Unlock()
+	return ch.conn.Write(writeCtx, msgType, payload)
+}
+
+func (client *clientEndpoint) setChannel(kind channelKind, ch *channelConn) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
 	switch kind {
 	case streamChannel:
-		session.stream = ch
-		session.streamPending = false
+		client.stream = ch
+		client.streamPending = false
 	case cmdChannel:
-		session.cmd = ch
-		session.cmdPending = false
+		client.cmd = ch
+		client.cmdPending = false
 	}
 }
 
-func (session *Session) channel(kind channelKind) *channelConn {
-	session.mu.RLock()
-	defer session.mu.RUnlock()
-	return session.channelLocked(kind)
+func (client *clientEndpoint) channel(kind channelKind) *channelConn {
+	client.mu.RLock()
+	defer client.mu.RUnlock()
+	return client.channelLocked(kind)
 }
 
-func (session *Session) pendingLocked(kind channelKind) bool {
+func (client *clientEndpoint) channelLocked(kind channelKind) *channelConn {
 	switch kind {
 	case streamChannel:
-		return session.streamPending
+		return client.stream
 	case cmdChannel:
-		return session.cmdPending
-	default:
-		return false
-	}
-}
-
-func (session *Session) setPendingLocked(kind channelKind, pending bool) {
-	switch kind {
-	case streamChannel:
-		session.streamPending = pending
-	case cmdChannel:
-		session.cmdPending = pending
-	}
-}
-
-func (session *Session) channelLocked(kind channelKind) *channelConn {
-	switch kind {
-	case streamChannel:
-		return session.stream
-	case cmdChannel:
-		return session.cmd
+		return client.cmd
 	default:
 		return nil
 	}
 }
 
-func (session *Session) channels() []*channelConn {
-	session.mu.RLock()
-	defer session.mu.RUnlock()
+func (client *clientEndpoint) pendingLocked(kind channelKind) bool {
+	switch kind {
+	case streamChannel:
+		return client.streamPending
+	case cmdChannel:
+		return client.cmdPending
+	default:
+		return false
+	}
+}
+
+func (client *clientEndpoint) setPendingLocked(kind channelKind, pending bool) {
+	switch kind {
+	case streamChannel:
+		client.streamPending = pending
+	case cmdChannel:
+		client.cmdPending = pending
+	}
+}
+
+func (client *clientEndpoint) channels() []*channelConn {
+	client.mu.RLock()
+	defer client.mu.RUnlock()
 
 	channels := make([]*channelConn, 0, 2)
-	if session.stream != nil {
-		channels = append(channels, session.stream)
+	if client.stream != nil {
+		channels = append(channels, client.stream)
 	}
-	if session.cmd != nil {
-		channels = append(channels, session.cmd)
+	if client.cmd != nil {
+		channels = append(channels, client.cmd)
 	}
 	return channels
 }
 
-func (session *Session) callbacksSnapshot() SessionCallbacks {
-	session.mu.RLock()
-	defer session.mu.RUnlock()
-	return session.callbacks
+func (client *clientEndpoint) setSession(session *session.Session) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	client.session = session
 }
 
-func (session *Session) dispatchStreamPCM(pcm []byte) {
-	callbacks := session.callbacksSnapshot()
-	if callbacks.OnStreamPCM != nil {
-		callbacks.OnStreamPCM(session, pcm)
+func (client *clientEndpoint) getSession() *session.Session {
+	client.mu.RLock()
+	defer client.mu.RUnlock()
+	return client.session
+}
+
+func (client *clientEndpoint) reportMedia(ctx context.Context, frame media.Frame) {
+	if session := client.getSession(); session != nil {
+		session.OnMedia(ctx, frame)
 	}
 }
 
-func (session *Session) dispatchStreamEvent(event StreamEvent) {
-	callbacks := session.callbacksSnapshot()
-	if callbacks.OnStreamEvent != nil {
-		callbacks.OnStreamEvent(session, event)
+func (client *clientEndpoint) reportCommand(ctx context.Context, payload []byte) {
+	if session := client.getSession(); session != nil {
+		session.OnCommand(ctx, payload)
 	}
 }
 
-func (session *Session) dispatchCommand(payload []byte) {
-	callbacks := session.callbacksSnapshot()
-	if callbacks.OnCommand != nil {
-		callbacks.OnCommand(session, payload)
+func (client *clientEndpoint) reportEvent(ctx context.Context, event endpoint.Event) {
+	if session := client.getSession(); session != nil {
+		session.OnEvent(ctx, event)
 	}
 }
 
-func (session *Session) dispatchDisconnected(err error) {
-	callbacks := session.callbacksSnapshot()
-	if callbacks.OnDisconnected != nil {
-		callbacks.OnDisconnected(session, err)
-	}
-}
-
-func (session *Session) reportError(err error) {
-	callbacks := session.callbacksSnapshot()
-	if callbacks.OnError != nil {
-		callbacks.OnError(session, err)
+func (client *clientEndpoint) reportError(ctx context.Context, err error) {
+	if session := client.getSession(); session != nil {
+		session.OnError(ctx, err)
 		return
 	}
-	session.server.reportError(fmt.Errorf("websocket client %q: %w", session.id, err))
+	client.server.logger.Error(
+		"client_id="+client.id+" websocket endpoint error",
+		slog.String("client_id", client.id),
+		slog.Any("error", err),
+	)
+}
+
+func (client *clientEndpoint) closeDone() {
+	client.closeOnce.Do(func() {
+		close(client.done)
+	})
 }
 
 func isNormalClose(err error) bool {

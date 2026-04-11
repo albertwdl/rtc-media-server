@@ -14,3 +14,40 @@ websocket:
   stream:
     sample_rate: 8000
     channels: 1
+
+session:
+  close_timeout: "3s"
+  idle_timeout: "0s"
+
+pipeline:
+  uplink_queue_size: 32
+  downlink_queue_size: 32
+  target_sample_rate: 8000
+  target_channels: 1
+  sample_format: "pcm16le"
+  debug_pcm_dir: "runtime/pcm"
+  uplink:
+    queue_size: 32
+    on_error: "drop"
+    stages:
+      - name: "aec_agc_ans_mock"
+        enabled: true
+      - name: "vad_mock"
+        enabled: true
+  downlink:
+    queue_size: 32
+    on_error: "drop"
+    stages:
+      - name: "pcm_normalize"
+        enabled: true
+        params:
+          sample_rate: 8000
+          channels: 1
+
+logging:
+  level: "info"
+  format: "text"
+
+webrtc:
+  enabled: false
+  # 未来接入 WebRTC 时在这里配置 ICE/STUN/TURN、RTP codec 和 GStreamer pipeline。
