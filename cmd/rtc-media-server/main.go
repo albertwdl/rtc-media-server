@@ -8,7 +8,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
-	"log/slog"
 	"math/big"
 	"net"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"rtc-media-server/internal/connector"
+	"rtc-media-server/internal/log"
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/session"
 	"rtc-media-server/internal/websocket"
@@ -28,15 +28,13 @@ const configPath = "configs/config.yaml"
 
 // main 组装 demo 运行所需的配置、SessionManager 和 WebSocket 服务。
 func main() {
-	logger := slog.Default()
-
 	cfg, err := websocket.LoadConfig(configPath)
 	if err != nil {
-		fatal(logger, "加载配置失败", err)
+		fatal("加载配置失败", err)
 	}
 
 	if err := ensureDemoCertificate(cfg.TLS.CertFile, cfg.TLS.KeyFile); err != nil {
-		fatal(logger, "准备本地 WSS 证书失败", err)
+		fatal("准备本地 WSS 证书失败", err)
 	}
 
 	sessionManager := session.NewManager(session.Config{
@@ -44,7 +42,6 @@ func main() {
 		DownlinkQueueSize: 32,
 		CloseTimeout:      3 * time.Second,
 		TargetFormat:      media.DefaultPCM16Format(),
-		Logger:            logger,
 	})
 
 	server, err := websocket.NewServer(cfg, websocket.Callbacks{
@@ -60,29 +57,22 @@ func main() {
 				sess.OnError(ctx, err)
 				return
 			}
-			logger.Error(
-				"client_id="+clientID+" websocket error",
-				slog.String("client_id", clientID),
-				slog.Any("error", err),
-			)
+			log.Errorf("client_id=%s websocket error: %v", clientID, err)
 		},
-	}, logger)
+	})
 	if err != nil {
-		fatal(logger, "创建 WebSocket 服务失败", err)
+		fatal("创建 WebSocket 服务失败", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	addr := net.JoinHostPort(cfg.Listen, strconv.Itoa(cfg.Port))
-	logger.Info(
-		"rtc-media-server demo 已启动",
-		slog.String("stream_addr", "wss://"+addr+cfg.StreamPath),
-	)
+	log.Infof("rtc-media-server demo 已启动 stream_addr=wss://%s%s", addr, cfg.StreamPath)
 	if err := server.Start(ctx); err != nil {
-		fatal(logger, "WebSocket 服务退出", err)
+		fatal("WebSocket 服务退出", err)
 	}
-	logger.Info("rtc-media-server demo 已停止")
+	log.Infof("rtc-media-server demo 已停止")
 }
 
 // ensureDemoCertificate 确保本地 demo WSS 证书存在，不存在时生成自签证书。
@@ -93,7 +83,7 @@ func ensureDemoCertificate(certFile, keyFile string) error {
 		return nil
 	}
 	if certExists != keyExists {
-		slog.Warn("检测到证书或私钥缺失，将重新生成本地 demo 证书", slog.String("cert_file", certFile), slog.String("key_file", keyFile))
+		log.Warnf("检测到证书或私钥缺失，将重新生成本地 demo 证书 cert_file=%s key_file=%s", certFile, keyFile)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(certFile), 0o755); err != nil {
@@ -139,7 +129,7 @@ func ensureDemoCertificate(certFile, keyFile string) error {
 	if err := os.WriteFile(keyFile, keyPEM, 0o600); err != nil {
 		return err
 	}
-	slog.Info("已生成本地 demo WSS 证书", slog.String("cert_file", certFile), slog.String("key_file", keyFile))
+	log.Infof("已生成本地 demo WSS 证书 cert_file=%s key_file=%s", certFile, keyFile)
 	return nil
 }
 
@@ -150,7 +140,7 @@ func fileExists(path string) bool {
 }
 
 // fatal 记录致命错误并退出进程。
-func fatal(logger *slog.Logger, msg string, err error) {
-	logger.Error(msg, slog.Any("error", err))
+func fatal(msg string, err error) {
+	log.Errorf("%s: %v", msg, err)
 	os.Exit(1)
 }

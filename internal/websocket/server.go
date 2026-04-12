@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	coderws "github.com/coder/websocket"
 
 	"rtc-media-server/internal/connector"
+	"rtc-media-server/internal/log"
 	"rtc-media-server/internal/media"
 )
 
@@ -21,7 +21,6 @@ import (
 type Server struct {
 	cfg       Config
 	callbacks Callbacks
-	logger    *slog.Logger
 	httpSrv   *http.Server
 	clients   map[string]*clientConnector
 	mu        sync.RWMutex
@@ -56,10 +55,7 @@ type channelConn struct {
 }
 
 // NewServer 创建全局 WebSocket 监听器。
-func NewServer(cfg Config, callbacks Callbacks, logger *slog.Logger) (*Server, error) {
-	if logger == nil {
-		logger = slog.Default()
-	}
+func NewServer(cfg Config, callbacks Callbacks) (*Server, error) {
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -70,7 +66,6 @@ func NewServer(cfg Config, callbacks Callbacks, logger *slog.Logger) (*Server, e
 	s := &Server{
 		cfg:       cfg,
 		callbacks: callbacks,
-		logger:    logger,
 		clients:   make(map[string]*clientConnector),
 	}
 
@@ -175,12 +170,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.logger.Info(
-		"client_id="+clientID+" websocket channel connected",
-		slog.String("client_id", clientID),
-		slog.String("protocol", client.Protocol()),
-		slog.String("channel", "stream"),
-	)
+	log.Infof("client_id=%s websocket channel connected protocol=%s channel=stream", clientID, client.Protocol())
 
 	s.readStream(r.Context(), client, ch)
 }
@@ -442,11 +432,7 @@ func (s *Server) reportError(ctx context.Context, clientID string, err error) {
 		s.callbacks.OnError(ctx, clientID, err)
 		return
 	}
-	s.logger.Error(
-		"client_id="+clientID+" websocket connector error",
-		slog.String("client_id", clientID),
-		slog.Any("error", err),
-	)
+	log.Errorf("client_id=%s websocket connector error: %v", clientID, err)
 }
 
 // clearMediaSink 清理客户端绑定的上行媒体 sink。

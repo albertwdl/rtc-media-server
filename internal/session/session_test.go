@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -139,7 +138,6 @@ func TestManagerCloseClosesAllSessions(t *testing.T) {
 // testConfig 返回 Session 单测使用的最小运行配置。
 func testConfig() Config {
 	return Config{
-		Logger:            slog.Default(),
 		UplinkQueueSize:   8,
 		DownlinkQueueSize: 8,
 		TargetFormat:      media.DefaultPCM16Format(),

@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync"
 	"sync/atomic"
 
+	"rtc-media-server/internal/log"
 	"rtc-media-server/internal/media"
 )
 
@@ -38,7 +38,6 @@ type QueuePipeline struct {
 	queue         chan media.Frame
 	stages        []media.Stage
 	sink          media.Sink
-	logger        *slog.Logger
 	errorStrategy ErrorStrategy
 	errorHandler  ErrorHandler
 
@@ -57,17 +56,14 @@ func (p *QueuePipeline) SetErrorHandler(handler ErrorHandler) {
 }
 
 // NewQueuePipeline 创建一个有界队列 pipeline。
-func NewQueuePipeline(name string, queueSize int, stages []media.Stage, sink media.Sink, logger *slog.Logger) *QueuePipeline {
-	return NewQueuePipelineWithStrategy(name, queueSize, stages, sink, logger, ErrorStrategyDrop)
+func NewQueuePipeline(name string, queueSize int, stages []media.Stage, sink media.Sink) *QueuePipeline {
+	return NewQueuePipelineWithStrategy(name, queueSize, stages, sink, ErrorStrategyDrop)
 }
 
 // NewQueuePipelineWithStrategy 创建一个带错误策略的有界队列 pipeline。
-func NewQueuePipelineWithStrategy(name string, queueSize int, stages []media.Stage, sink media.Sink, logger *slog.Logger, strategy ErrorStrategy) *QueuePipeline {
+func NewQueuePipelineWithStrategy(name string, queueSize int, stages []media.Stage, sink media.Sink, strategy ErrorStrategy) *QueuePipeline {
 	if queueSize <= 0 {
 		queueSize = 32
-	}
-	if logger == nil {
-		logger = slog.Default()
 	}
 	if strategy == "" {
 		strategy = ErrorStrategyDrop
@@ -77,7 +73,6 @@ func NewQueuePipelineWithStrategy(name string, queueSize int, stages []media.Sta
 		queue:         make(chan media.Frame, queueSize),
 		stages:        append([]media.Stage(nil), stages...),
 		sink:          sink,
-		logger:        logger,
 		errorStrategy: strategy,
 		done:          make(chan struct{}),
 	}
@@ -143,12 +138,12 @@ func (p *QueuePipeline) run() {
 		case frame := <-p.queue:
 			if err := p.process(p.ctx, frame); err != nil {
 				p.errors.Add(1)
-				p.logger.Error(
-					fmt.Sprintf("client_id=%s pipeline process failed", frame.SessionID),
-					slog.String("client_id", frame.SessionID),
-					slog.String("pipeline", p.name),
-					slog.String("direction", string(frame.Direction)),
-					slog.Any("error", err),
+				log.Errorf(
+					"client_id=%s pipeline process failed pipeline=%s direction=%s error=%v",
+					frame.SessionID,
+					p.name,
+					frame.Direction,
+					err,
 				)
 				continue
 			}
@@ -166,14 +161,14 @@ func (p *QueuePipeline) process(ctx context.Context, frame media.Frame) error {
 			if errors.Is(err, ErrDropFrame) {
 				return nil
 			}
-			p.logger.Error(
-				fmt.Sprintf("client_id=%s pipeline stage failed", frame.SessionID),
-				slog.String("client_id", frame.SessionID),
-				slog.String("pipeline", p.name),
-				slog.String("stage", stage.Name()),
-				slog.String("direction", string(frame.Direction)),
-				slog.String("codec", frame.Format.Codec),
-				slog.Any("error", err),
+			log.Errorf(
+				"client_id=%s pipeline stage failed pipeline=%s stage=%s direction=%s codec=%s error=%v",
+				frame.SessionID,
+				p.name,
+				stage.Name(),
+				frame.Direction,
+				frame.Format.Codec,
+				err,
 			)
 			p.reportError(ctx, frame, fmt.Errorf("stage %s: %w", stage.Name(), err))
 			if errors.Is(err, ErrFatal) || p.errorStrategy == ErrorStrategyCloseSession {

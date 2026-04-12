@@ -3,12 +3,12 @@ package audioenhancement
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
+	"rtc-media-server/internal/log"
 	"rtc-media-server/internal/media"
 )
 
@@ -16,7 +16,6 @@ import (
 // 当前实现不做真实算法处理，只把经过该 stage 的 PCM 追加保存到本地文件。
 type MockEngine struct {
 	outputDir string
-	logger    *slog.Logger
 
 	mu    sync.Mutex
 	files map[string]*os.File
@@ -25,19 +24,15 @@ type MockEngine struct {
 
 // NewMockEngine 创建一个模拟 AEC+AGC+ANS 语音增强引擎。
 // outputDir 用于存放每个 client 独立的 PCM 文件。
-func NewMockEngine(outputDir string, logger *slog.Logger) (*MockEngine, error) {
+func NewMockEngine(outputDir string) (*MockEngine, error) {
 	if outputDir == "" {
 		outputDir = filepath.Join("runtime", "pcm")
-	}
-	if logger == nil {
-		logger = slog.Default()
 	}
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return nil, fmt.Errorf("创建 PCM 输出目录失败: %w", err)
 	}
 	return &MockEngine{
 		outputDir: outputDir,
-		logger:    logger,
 		files:     make(map[string]*os.File),
 	}, nil
 }
@@ -50,12 +45,12 @@ func (e *MockEngine) AddReference(ctx context.Context, frame media.Frame) error 
 	e.mu.Lock()
 	e.refs++
 	e.mu.Unlock()
-	e.logger.Info(
-		"client_id="+frame.SessionID+" audio enhancement reference received",
-		slog.String("client_id", frame.SessionID),
-		slog.String("direction", string(frame.Direction)),
-		slog.String("codec", frame.Format.Codec),
-		slog.Int("bytes", len(frame.Payload)),
+	log.Infof(
+		"client_id=%s audio enhancement reference received direction=%s codec=%s bytes=%d",
+		frame.SessionID,
+		frame.Direction,
+		frame.Format.Codec,
+		len(frame.Payload),
 	)
 	return nil
 }
@@ -66,13 +61,13 @@ func (e *MockEngine) Process(ctx context.Context, frame media.Frame) (media.Fram
 		if err := e.SavePCM(frame.SessionID, frame.Payload); err != nil {
 			return frame, err
 		}
-		e.logger.Info(
-			"client_id="+frame.SessionID+" audio enhancement processed",
-			slog.String("client_id", frame.SessionID),
-			slog.String("direction", string(frame.Direction)),
-			slog.String("codec", frame.Format.Codec),
-			slog.Int("bytes", len(frame.Payload)),
-			slog.String("file", e.filePath(frame.SessionID)),
+		log.Infof(
+			"client_id=%s audio enhancement processed direction=%s codec=%s bytes=%d file=%s",
+			frame.SessionID,
+			frame.Direction,
+			frame.Format.Codec,
+			len(frame.Payload),
+			e.filePath(frame.SessionID),
 		)
 	}
 	return frame, nil

@@ -2,32 +2,28 @@ package application
 
 import (
 	"context"
-	"log/slog"
 	"sync"
 	"sync/atomic"
 
+	"rtc-media-server/internal/log"
 	"rtc-media-server/internal/media"
 )
 
 // MockConnector 模拟服务侧连接器。
 // 当前 demo 只记录上行媒体帧，真实业务接入时替换为实际 ServiceConnector。
 type MockConnector struct {
-	id     string
-	logger *slog.Logger
-	done   chan struct{}
-	once   sync.Once
-	count  atomic.Uint64
+	id    string
+	done  chan struct{}
+	once  sync.Once
+	count atomic.Uint64
 
 	mu       sync.RWMutex
 	downlink media.Sink
 }
 
 // NewMockConnector 创建服务侧 mock connector。
-func NewMockConnector(id string, logger *slog.Logger) *MockConnector {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &MockConnector{id: id, logger: logger, done: make(chan struct{})}
+func NewMockConnector(id string) *MockConnector {
+	return &MockConnector{id: id, done: make(chan struct{})}
 }
 
 // ID 返回 mock 服务连接器绑定的 Session ID。
@@ -47,13 +43,13 @@ func (c *MockConnector) Start(ctx context.Context, downlink media.Sink) error {
 // Consume 接收经过完整上行 pipeline 处理后的媒体帧。
 func (c *MockConnector) Consume(ctx context.Context, frame media.Frame) error {
 	c.count.Add(1)
-	c.logger.Info(
-		"client_id="+frame.SessionID+" service connector received frame",
-		slog.String("client_id", frame.SessionID),
-		slog.String("protocol", c.Protocol()),
-		slog.String("direction", string(frame.Direction)),
-		slog.String("codec", frame.Format.Codec),
-		slog.Int("bytes", len(frame.Payload)),
+	log.Infof(
+		"client_id=%s service connector received frame protocol=%s direction=%s codec=%s bytes=%d",
+		frame.SessionID,
+		c.Protocol(),
+		frame.Direction,
+		frame.Format.Codec,
+		len(frame.Payload),
 	)
 	return nil
 }

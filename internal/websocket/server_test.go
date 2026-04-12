@@ -329,7 +329,7 @@ func newTestTLSServer(t *testing.T, onSession func(*session.Session), callbackOp
 	for _, opt := range callbackOpts {
 		opt(&callbacks)
 	}
-	server, err := NewServer(cfg, callbacks, nil)
+	server, err := NewServer(cfg, callbacks)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -348,7 +348,7 @@ func newBareTestTLSServer(t *testing.T, callbacks Callbacks) (Config, string, *h
 	cfg := DefaultConfig()
 	cfg.TLS.CertFile = cert
 	cfg.TLS.KeyFile = key
-	server, err := NewServer(cfg, callbacks, nil)
+	server, err := NewServer(cfg, callbacks)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}

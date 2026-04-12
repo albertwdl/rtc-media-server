@@ -2,10 +2,10 @@ package controller
 
 import (
 	"context"
-	"log/slog"
 	"sync"
 	"time"
 
+	"rtc-media-server/internal/log"
 	"rtc-media-server/internal/media"
 )
 
@@ -23,7 +23,6 @@ type Config struct {
 // Dependencies 定义 Controller 操作 Session 所需的外部能力。
 type Dependencies struct {
 	SessionID    string
-	Logger       *slog.Logger
 	CloseSession func(ctx context.Context, reason string) error
 }
 
@@ -53,9 +52,6 @@ func New(cfg Config, deps Dependencies) *Controller {
 	if cfg.ReferenceQueueSize <= 0 {
 		cfg.ReferenceQueueSize = 16
 	}
-	if deps.Logger == nil {
-		deps.Logger = slog.Default()
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &Controller{
 		cfg:                cfg,
@@ -75,12 +71,12 @@ func (c *Controller) Emit(ctx context.Context, event media.StageEvent) {
 	if event.SessionID == "" {
 		event.SessionID = c.deps.SessionID
 	}
-	c.deps.Logger.Info(
-		"client_id="+event.SessionID+" controller event",
-		slog.String("client_id", event.SessionID),
-		slog.String("event_type", event.Type),
-		slog.String("direction", string(event.Direction)),
-		slog.String("stage", event.Stage),
+	log.Infof(
+		"client_id=%s controller event event_type=%s direction=%s stage=%s",
+		event.SessionID,
+		event.Type,
+		event.Direction,
+		event.Stage,
 	)
 	switch event.Type {
 	case EventSilenceTimeout:
@@ -96,10 +92,10 @@ func (c *Controller) OnDownlinkReference(ctx context.Context, frame media.Frame)
 		return
 	case c.references <- cloneFrame(frame):
 	default:
-		c.deps.Logger.Warn(
-			"client_id="+c.deps.SessionID+" controller reference queue full",
-			slog.String("client_id", c.deps.SessionID),
-			slog.Int("queue_len", len(c.references)),
+		log.Warnf(
+			"client_id=%s controller reference queue full queue_len=%d",
+			c.deps.SessionID,
+			len(c.references),
 		)
 	}
 }
@@ -119,10 +115,10 @@ func (c *Controller) CloseSession(ctx context.Context, reason string) error {
 	if c.deps.CloseSession == nil {
 		return nil
 	}
-	c.deps.Logger.Info(
-		"client_id="+c.deps.SessionID+" controller close session",
-		slog.String("client_id", c.deps.SessionID),
-		slog.String("reason", reason),
+	log.Infof(
+		"client_id=%s controller close session reason=%s",
+		c.deps.SessionID,
+		reason,
 	)
 	return c.deps.CloseSession(ctx, reason)
 }
@@ -171,11 +167,11 @@ func (c *Controller) dispatchReference(ctx context.Context, frame media.Frame) {
 	c.mu.RUnlock()
 	for name, consumer := range consumers {
 		if err := consumer.AddReference(ctx, frame); err != nil {
-			c.deps.Logger.Error(
-				"client_id="+c.deps.SessionID+" reference consumer failed",
-				slog.String("client_id", c.deps.SessionID),
-				slog.String("consumer", name),
-				slog.Any("error", err),
+			log.Errorf(
+				"client_id=%s reference consumer failed consumer=%s error=%v",
+				c.deps.SessionID,
+				name,
+				err,
 			)
 		}
 	}

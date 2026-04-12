@@ -10,7 +10,7 @@ import (
 // TestMockEngineSavePCM 验证语音增强 mock 会保存 PCM 数据。
 func TestMockEngineSavePCM(t *testing.T) {
 	dir := t.TempDir()
-	engine, err := NewMockEngine(dir, nil)
+	engine, err := NewMockEngine(dir)
 	if err != nil {
 		t.Fatalf("NewMockEngine: %v", err)
 	}

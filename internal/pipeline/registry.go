@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"fmt"
-	"log/slog"
 	"sync"
 
 	"rtc-media-server/internal/media"
@@ -19,7 +18,6 @@ type StageConfig struct {
 // Dependencies 是 StageFactory 创建 stage 时可使用的外部依赖。
 // 这里保持通用，避免 registry 直接依赖 WebSocket、WebRTC 或业务模块。
 type Dependencies struct {
-	Logger       *slog.Logger
 	TargetFormat media.Format
 }
 

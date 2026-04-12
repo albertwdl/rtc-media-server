@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"rtc-media-server/internal/audioenhancement"
 	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/controller"
+	"rtc-media-server/internal/log"
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/pipeline"
 	"rtc-media-server/internal/pipeline/stages"
@@ -24,7 +24,6 @@ type Config struct {
 	CloseTimeout      time.Duration
 	TargetFormat      media.Format
 	Controller        controller.Config
-	Logger            *slog.Logger
 }
 
 // Manager 管理所有业务 Session。
@@ -41,7 +40,6 @@ type Session struct {
 	clientConnector  connector.ClientConnector
 	serviceConnector connector.ServiceConnector
 	controller       *controller.Controller
-	logger           *slog.Logger
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -90,20 +88,15 @@ func (m *Manager) Attach(ctx context.Context, client connector.ClientConnector) 
 func NewSession(ctx context.Context, cfg Config, client connector.ClientConnector) (*Session, error) {
 	cfg = normalizeConfig(cfg)
 	sessionCtx, cancel := context.WithCancel(context.Background())
-	logger := cfg.Logger.With(
-		slog.String("client_id", client.ID()),
-		slog.String("protocol", client.Protocol()),
-	)
 	s := &Session{
 		id:              client.ID(),
 		clientConnector: client,
-		logger:          logger,
 		ctx:             sessionCtx,
 		cancel:          cancel,
 		done:            make(chan struct{}),
 	}
 
-	service := application.NewMockConnector(s.ID(), s.Logger())
+	service := application.NewMockConnector(s.ID())
 	s.serviceConnector = service
 	cleanup := func(reason string) {
 		cancel()
@@ -121,20 +114,18 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 
 	s.controller = controller.New(cfg.Controller, controller.Dependencies{
 		SessionID: s.id,
-		Logger:    s.logger,
 		CloseSession: func(ctx context.Context, reason string) error {
 			return s.Close(ctx, reason)
 		},
 	})
 
-	engine, err := audioenhancement.NewMockEngine("", s.Logger())
+	engine, err := audioenhancement.NewMockEngine("")
 	if err != nil {
 		cleanup("create audio enhancement failed")
 		return nil, err
 	}
 	s.controller.RegisterReferenceConsumer(engine.Name(), engine)
 	vadStage := vad.NewMockStageWithTimeouts(
-		s.Logger(),
 		s.Controller().InitialSilenceTimeout(),
 		s.Controller().SilenceTimeout(),
 	)
@@ -184,7 +175,7 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 		return nil, err
 	}
 
-	logger.Info("client_id=" + s.id + " session created")
+	log.Infof("client_id=%s session created protocol=%s", s.id, client.Protocol())
 	return s, nil
 }
 
@@ -202,15 +193,12 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.TargetFormat.Kind == "" {
 		cfg.TargetFormat = media.DefaultPCM16Format()
 	}
-	if cfg.Logger == nil {
-		cfg.Logger = slog.Default()
-	}
 	return cfg
 }
 
 // newPipeline 创建带 Session 错误回调的队列 pipeline。
 func (s *Session) newPipeline(name string, queueSize int, stages []media.Stage, sink media.Sink) media.Pipeline {
-	p := pipeline.NewQueuePipeline(name, queueSize, stages, sink, s.logger)
+	p := pipeline.NewQueuePipeline(name, queueSize, stages, sink)
 	p.SetErrorHandler(func(ctx context.Context, frame media.Frame, err error) {
 		s.OnError(ctx, fmt.Errorf("%s pipeline: %w", name, err))
 	})
@@ -265,9 +253,6 @@ func (s *Session) Context() context.Context { return s.ctx }
 
 // Done 返回 Session 关闭通知。
 func (s *Session) Done() <-chan struct{} { return s.done }
-
-// Logger 返回带 Session 字段的日志器。
-func (s *Session) Logger() *slog.Logger { return s.logger }
 
 // ClientConnector 返回 Session 持有的客户端 Connector。
 func (s *Session) ClientConnector() connector.ClientConnector { return s.clientConnector }
@@ -342,7 +327,7 @@ func (s *Session) Close(ctx context.Context, reason string) error {
 			closeErr = err
 		}
 		close(s.done)
-		s.logger.Info("client_id="+s.id+" session closed", slog.String("reason", reason))
+		log.Infof("client_id=%s session closed reason=%s", s.id, reason)
 	})
 	return closeErr
 }
@@ -361,12 +346,12 @@ func (s *Session) OnMedia(ctx context.Context, frame media.Frame) {
 
 // OnEvent 接收 Connector 或协议适配 stage 上报的非媒体事件。
 func (s *Session) OnEvent(ctx context.Context, event media.Event) {
-	s.logger.Info("client_id="+s.id+" connector event", slog.String("event_type", event.Type), slog.Int("bytes", len(event.Raw)))
+	log.Infof("client_id=%s connector event event_type=%s bytes=%d", s.id, event.Type, len(event.Raw))
 }
 
 // OnError 记录 Session 范围内的错误。
 func (s *Session) OnError(ctx context.Context, err error) {
-	s.logger.Error("client_id="+s.id+" session error", slog.Any("error", err))
+	log.Errorf("client_id=%s session error: %v", s.id, err)
 }
 
 // setErr 记录 Session 的最终错误状态。
