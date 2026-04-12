@@ -83,11 +83,11 @@ func main() {
 	defer stop()
 
 	addr := net.JoinHostPort(cfg.Listen, strconv.Itoa(cfg.Port))
-	log.Infof("rtc-media-server demo 已启动 stream_addr=wss://%s%s", addr, cfg.StreamPath)
+	log.Infof("rtc-media-server demo started stream_addr=wss://%s%s", addr, cfg.StreamPath)
 	if err := server.Start(ctx); err != nil {
 		fatal("WebSocket 服务退出", err)
 	}
-	log.Infof("rtc-media-server demo 已停止")
+	log.Infof("rtc-media-server demo stopped")
 }
 
 // ensureDemoCertificate 确保本地 demo WSS 证书存在，不存在时生成自签证书。
@@ -98,7 +98,7 @@ func ensureDemoCertificate(certFile, keyFile string) error {
 		return nil
 	}
 	if certExists != keyExists {
-		log.Warnf("检测到证书或私钥缺失，将重新生成本地 demo 证书 cert_file=%s key_file=%s", certFile, keyFile)
+		log.Warnf("demo certificate or key is missing, generating local demo certificate cert_file=%s key_file=%s", certFile, keyFile)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(certFile), demoCertDirPerm); err != nil {
@@ -144,7 +144,7 @@ func ensureDemoCertificate(certFile, keyFile string) error {
 	if err := os.WriteFile(keyFile, keyPEM, demoCertFilePerm); err != nil {
 		return err
 	}
-	log.Infof("已生成本地 demo WSS 证书 cert_file=%s key_file=%s", certFile, keyFile)
+	log.Infof("local demo WSS certificate generated cert_file=%s key_file=%s", certFile, keyFile)
 	return nil
 }
 
