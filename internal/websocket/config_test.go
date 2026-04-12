@@ -24,7 +24,6 @@ websocket:
   listen: "127.0.0.1"
   port: 9443
   stream_path: "/v1/stream"
-  cmd_path: "/v1/cmd"
   client_id_header: "X-Hardware-Id"
   tls:
     cert_file: "` + cert + `"

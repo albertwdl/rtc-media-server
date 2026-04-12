@@ -35,8 +35,6 @@ func (c *testClientConnector) Start(ctx context.Context, sink media.Sink) error 
 
 func (c *testClientConnector) Consume(ctx context.Context, frame media.Frame) error { return nil }
 
-func (c *testClientConnector) SendCommand(ctx context.Context, payload []byte) error { return nil }
-
 func (c *testClientConnector) MeasureRTT(ctx context.Context) (time.Duration, error) {
 	return time.Millisecond, nil
 }

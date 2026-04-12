@@ -12,7 +12,6 @@ import (
 
 const (
 	DefaultStreamPath     = "/v1/stream"
-	DefaultCmdPath        = "/v1/cmd"
 	DefaultClientIDHeader = "X-Hardware-Id"
 )
 
@@ -21,7 +20,6 @@ type Config struct {
 	Listen          string
 	Port            int
 	StreamPath      string
-	CmdPath         string
 	ClientIDHeader  string
 	TLS             TLSConfig
 	RTTInterval     time.Duration
@@ -49,7 +47,6 @@ func DefaultConfig() Config {
 		Listen:          "0.0.0.0",
 		Port:            8443,
 		StreamPath:      DefaultStreamPath,
-		CmdPath:         DefaultCmdPath,
 		ClientIDHeader:  DefaultClientIDHeader,
 		RTTInterval:     10 * time.Second,
 		ReadTimeout:     30 * time.Second,
@@ -109,12 +106,6 @@ func validateConfig(cfg Config) error {
 	if cfg.StreamPath == "" || cfg.StreamPath[0] != '/' {
 		return fmt.Errorf("invalid websocket stream path %q", cfg.StreamPath)
 	}
-	if cfg.CmdPath == "" || cfg.CmdPath[0] != '/' {
-		return fmt.Errorf("invalid websocket cmd path %q", cfg.CmdPath)
-	}
-	if cfg.StreamPath == cfg.CmdPath {
-		return fmt.Errorf("stream path and cmd path must be different: %q", cfg.StreamPath)
-	}
 	if cfg.ClientIDHeader == "" {
 		return errors.New("websocket client id header is required")
 	}
@@ -163,7 +154,6 @@ type rawConfig struct {
 	Listen          string          `yaml:"listen"`
 	Port            int             `yaml:"port"`
 	StreamPath      string          `yaml:"stream_path"`
-	CmdPath         string          `yaml:"cmd_path"`
 	ClientIDHeader  string          `yaml:"client_id_header"`
 	TLS             rawTLSConfig    `yaml:"tls"`
 	RTTInterval     string          `yaml:"rtt_interval"`
@@ -189,7 +179,6 @@ func defaultRawConfig() rawConfig {
 		Listen:          cfg.Listen,
 		Port:            cfg.Port,
 		StreamPath:      cfg.StreamPath,
-		CmdPath:         cfg.CmdPath,
 		ClientIDHeader:  cfg.ClientIDHeader,
 		RTTInterval:     cfg.RTTInterval.String(),
 		ReadTimeout:     cfg.ReadTimeout.String(),
@@ -220,7 +209,6 @@ func (raw rawConfig) config() (Config, error) {
 		Listen:          raw.Listen,
 		Port:            raw.Port,
 		StreamPath:      raw.StreamPath,
-		CmdPath:         raw.CmdPath,
 		ClientIDHeader:  raw.ClientIDHeader,
 		TLS:             TLSConfig(raw.TLS),
 		RTTInterval:     rttInterval,

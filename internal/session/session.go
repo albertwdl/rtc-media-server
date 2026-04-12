@@ -32,7 +32,6 @@ type Dependencies struct {
 	NewServiceConnector func(session *Session) (connector.ServiceConnector, error)
 	Logger              *slog.Logger
 	OnSession           func(session *Session)
-	OnCommand           func(session *Session, payload []byte)
 	OnEvent             func(session *Session, event connector.Event)
 	OnError             func(session *Session, err error)
 }
@@ -67,9 +66,8 @@ type Session struct {
 	rtt time.Duration
 	ok  bool
 
-	onCommand func(session *Session, payload []byte)
-	onEvent   func(session *Session, event connector.Event)
-	onError   func(session *Session, err error)
+	onEvent func(session *Session, event connector.Event)
+	onError func(session *Session, err error)
 }
 
 // NewManager 创建业务 Session 管理器。
@@ -119,7 +117,6 @@ func (m *Manager) Attach(ctx context.Context, client connector.ClientConnector) 
 		ctx:             sessionCtx,
 		cancel:          cancel,
 		done:            make(chan struct{}),
-		onCommand:       m.deps.OnCommand,
 		onEvent:         m.deps.OnEvent,
 		onError:         m.deps.OnError,
 	}
@@ -311,10 +308,6 @@ func (s *Session) EnqueueDownlink(ctx context.Context, frame media.Frame) error 
 	return s.downlink.Push(ctx, frame)
 }
 
-func (s *Session) SendCommand(ctx context.Context, payload []byte) error {
-	return s.clientConnector.SendCommand(ctx, payload)
-}
-
 func (s *Session) MeasureRTT(ctx context.Context) (time.Duration, error) {
 	rtt, err := s.clientConnector.MeasureRTT(ctx)
 	if err != nil {
@@ -362,13 +355,6 @@ func (s *Session) OnMedia(ctx context.Context, frame media.Frame) {
 	}
 	if err := s.uplink.Push(ctx, frame); err != nil {
 		s.OnError(ctx, fmt.Errorf("push uplink frame: %w", err))
-	}
-}
-
-func (s *Session) OnCommand(ctx context.Context, payload []byte) {
-	s.logger.Info("client_id="+s.id+" command received", slog.Int("bytes", len(payload)))
-	if s.onCommand != nil {
-		s.onCommand(s, append([]byte(nil), payload...))
 	}
 }
 

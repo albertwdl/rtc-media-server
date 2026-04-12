@@ -100,7 +100,6 @@ func main() {
 	logger.Info(
 		"rtc-media-server demo 已启动",
 		slog.String("stream_addr", "wss://"+addr+cfg.StreamPath),
-		slog.String("cmd_addr", "wss://"+addr+cfg.CmdPath),
 	)
 	if err := server.Start(ctx); err != nil {
 		fatal(logger, "WebSocket 服务退出", err)

@@ -24,7 +24,6 @@ type ClientConnector interface {
 	media.Source
 	media.Sink
 
-	SendCommand(ctx context.Context, payload []byte) error
 	MeasureRTT(ctx context.Context) (time.Duration, error)
 	Close(ctx context.Context, reason string) error
 	Done() <-chan struct{}

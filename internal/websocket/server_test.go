@@ -171,48 +171,6 @@ func TestDownlinkPipelineSendsResponseAudioDelta(t *testing.T) {
 	}
 }
 
-func TestCommandHookAndSessionSendCommand(t *testing.T) {
-	cmdCh := make(chan []byte, 1)
-	sessionCh := make(chan *session.Session, 1)
-	_, url, _ := newTestTLSServer(t, session.Dependencies{
-		OnSession: func(session *session.Session) {
-			sessionCh <- session
-		},
-		OnCommand: func(_ *session.Session, payload []byte) {
-			cmdCh <- payload
-		},
-	})
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	conn := dialTestWS(t, ctx, url+"/v1/cmd", "client-e")
-	defer conn.Close(coderws.StatusNormalClosure, "test done")
-
-	if err := conn.Write(ctx, coderws.MessageText, []byte(`{"action":"start"}`)); err != nil {
-		t.Fatalf("write cmd: %v", err)
-	}
-	select {
-	case got := <-cmdCh:
-		if string(got) != `{"action":"start"}` {
-			t.Fatalf("cmd payload = %s", got)
-		}
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for cmd callback")
-	}
-
-	sess := <-sessionCh
-	if err := sess.SendCommand(ctx, []byte(`{"action":"stop"}`)); err != nil {
-		t.Fatalf("SendCommand: %v", err)
-	}
-	_, got, err := conn.Read(ctx)
-	if err != nil {
-		t.Fatalf("read sent command: %v", err)
-	}
-	if string(got) != `{"action":"stop"}` {
-		t.Fatalf("sent command = %s", got)
-	}
-}
-
 func TestMissingClientIDRejected(t *testing.T) {
 	_, url, client := newTestTLSServer(t, session.Dependencies{})
 
@@ -251,7 +209,7 @@ func TestDuplicateChannelRejected(t *testing.T) {
 	}
 }
 
-func TestRTTUsesOnlyStreamChannel(t *testing.T) {
+func TestRTTUsesStreamChannel(t *testing.T) {
 	sessionCh := make(chan *session.Session, 1)
 	_, url, _ := newTestTLSServer(t, session.Dependencies{
 		OnSession: func(session *session.Session) {
@@ -261,8 +219,8 @@ func TestRTTUsesOnlyStreamChannel(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	cmdConn := dialTestWS(t, ctx, url+"/v1/cmd", "client-g")
-	defer cmdConn.Close(coderws.StatusNormalClosure, "test done")
+	streamConn := dialTestWS(t, ctx, url+"/v1/stream", "client-g")
+	defer streamConn.Close(coderws.StatusNormalClosure, "test done")
 
 	var sess *session.Session
 	select {
@@ -270,12 +228,6 @@ func TestRTTUsesOnlyStreamChannel(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("timed out waiting for session")
 	}
-	if _, err := sess.MeasureRTT(ctx); err == nil {
-		t.Fatal("expected stream channel missing error")
-	}
-
-	streamConn := dialTestWS(t, ctx, url+"/v1/stream", "client-g")
-	defer streamConn.Close(coderws.StatusNormalClosure, "test done")
 	readCtx, readCancel := context.WithCancel(context.Background())
 	defer readCancel()
 	go func() {

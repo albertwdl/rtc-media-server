@@ -35,26 +35,16 @@ type clientConnector struct {
 
 	mu            sync.RWMutex
 	stream        *channelConn
-	cmd           *channelConn
 	streamPending bool
-	cmdPending    bool
 	session       *session.Session
 	done          chan struct{}
 	closeOnce     sync.Once
 }
 
 type channelConn struct {
-	kind    channelKind
 	conn    *coderws.Conn
 	writeMu sync.Mutex
 }
-
-type channelKind string
-
-const (
-	streamChannel channelKind = "stream"
-	cmdChannel    channelKind = "cmd"
-)
 
 // NewServer 创建全局 WebSocket 监听器。
 func NewServer(cfg Config, manager *session.Manager, logger *slog.Logger) (*Server, error) {
@@ -80,7 +70,6 @@ func NewServer(cfg Config, manager *session.Manager, logger *slog.Logger) (*Serv
 
 	mux := http.NewServeMux()
 	mux.HandleFunc(cfg.StreamPath, s.handleStream)
-	mux.HandleFunc(cfg.CmdPath, s.handleCmd)
 
 	s.httpSrv = &http.Server{
 		Addr:              net.JoinHostPort(cfg.Listen, fmt.Sprintf("%d", cfg.Port)),
@@ -148,21 +137,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
-	s.handleWebSocket(w, r, streamChannel)
-}
-
-func (s *Server) handleCmd(w http.ResponseWriter, r *http.Request) {
-	s.handleWebSocket(w, r, cmdChannel)
-}
-
-func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request, kind channelKind) {
 	clientID := strings.TrimSpace(r.Header.Get(s.cfg.ClientIDHeader))
 	if clientID == "" {
 		http.Error(w, "missing websocket client id header "+s.cfg.ClientIDHeader, http.StatusBadRequest)
 		return
 	}
 
-	client, err := s.reserveChannel(clientID, kind)
+	client, err := s.reserveClient(clientID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
@@ -170,18 +151,18 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request, kind ch
 
 	conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{InsecureSkipVerify: false})
 	if err != nil {
-		s.unregisterChannel(clientID, kind, err)
+		s.unregisterClient(clientID, err)
 		return
 	}
 	conn.SetReadLimit(s.cfg.MaxMessageBytes)
 
-	ch := &channelConn{kind: kind, conn: conn}
-	client.setChannel(kind, ch)
+	ch := &channelConn{conn: conn}
+	client.setStream(ch)
 
 	session, _, err := s.manager.Attach(r.Context(), client)
 	if err != nil {
 		_ = conn.Close(coderws.StatusInternalError, "create session failed")
-		s.unregisterChannel(clientID, kind, err)
+		s.unregisterClient(clientID, err)
 		return
 	}
 	client.setSession(session)
@@ -190,21 +171,17 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request, kind ch
 		"client_id="+clientID+" websocket channel connected",
 		slog.String("client_id", clientID),
 		slog.String("protocol", client.Protocol()),
-		slog.String("channel", string(kind)),
+		slog.String("channel", "stream"),
 	)
 
-	if kind == streamChannel {
-		s.readStream(r.Context(), client, ch)
-		return
-	}
-	s.readCmd(r.Context(), client, ch)
+	s.readStream(r.Context(), client, ch)
 }
 
 func (s *Server) readStream(ctx context.Context, client *clientConnector, ch *channelConn) {
 	var readErr error
 	defer func() {
 		_ = ch.conn.Close(coderws.StatusNormalClosure, "stream channel closed")
-		s.unregisterChannel(client.id, streamChannel, readErr)
+		s.unregisterClient(client.id, readErr)
 	}()
 
 	for {
@@ -240,29 +217,7 @@ func (s *Server) handleStreamPayload(ctx context.Context, client *clientConnecto
 	})
 }
 
-func (s *Server) readCmd(ctx context.Context, client *clientConnector, ch *channelConn) {
-	var readErr error
-	defer func() {
-		_ = ch.conn.Close(coderws.StatusNormalClosure, "cmd channel closed")
-		s.unregisterChannel(client.id, cmdChannel, readErr)
-	}()
-
-	for {
-		readCtx, cancel := context.WithTimeout(ctx, s.cfg.ReadTimeout)
-		msgType, payload, err := ch.conn.Read(readCtx)
-		cancel()
-		if err != nil {
-			readErr = err
-			return
-		}
-		if msgType != coderws.MessageText && msgType != coderws.MessageBinary {
-			continue
-		}
-		client.reportCommand(ctx, payload)
-	}
-}
-
-func (s *Server) reserveChannel(clientID string, kind channelKind) (*clientConnector, error) {
+func (s *Server) reserveClient(clientID string) (*clientConnector, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -274,14 +229,14 @@ func (s *Server) reserveChannel(clientID string, kind channelKind) (*clientConne
 
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	if client.channelLocked(kind) != nil || client.pendingLocked(kind) {
-		return nil, fmt.Errorf("websocket client %q %s channel already connected", clientID, kind)
+	if client.stream != nil || client.streamPending {
+		return nil, fmt.Errorf("websocket client %q stream channel already connected", clientID)
 	}
-	client.setPendingLocked(kind, true)
+	client.streamPending = true
 	return client, nil
 }
 
-func (s *Server) unregisterChannel(clientID string, kind channelKind, err error) {
+func (s *Server) unregisterClient(clientID string, err error) {
 	var (
 		client       *clientConnector
 		disconnected bool
@@ -291,18 +246,10 @@ func (s *Server) unregisterChannel(clientID string, kind channelKind, err error)
 	client = s.clients[clientID]
 	if client != nil {
 		client.mu.Lock()
-		switch kind {
-		case streamChannel:
-			client.stream = nil
-			client.streamPending = false
-		case cmdChannel:
-			client.cmd = nil
-			client.cmdPending = false
-		}
-		if client.stream == nil && client.cmd == nil && !client.streamPending && !client.cmdPending {
-			delete(s.clients, clientID)
-			disconnected = true
-		}
+		client.stream = nil
+		client.streamPending = false
+		delete(s.clients, clientID)
+		disconnected = true
 		client.mu.Unlock()
 	}
 	s.mu.Unlock()
@@ -342,7 +289,7 @@ func (s *Server) rttLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			for _, client := range s.snapshotClients() {
-				if client.channel(streamChannel) == nil {
+				if client.streamConn() == nil {
 					continue
 				}
 				pingCtx, cancel := context.WithTimeout(ctx, s.cfg.WriteTimeout)
@@ -365,7 +312,7 @@ func (client *clientConnector) Start(ctx context.Context, sink media.Sink) error
 }
 
 func (client *clientConnector) Consume(ctx context.Context, frame media.Frame) error {
-	ch := client.channel(streamChannel)
+	ch := client.streamConn()
 	if ch == nil {
 		return fmt.Errorf("client_id=%s stream channel not connected", client.id)
 	}
@@ -375,16 +322,8 @@ func (client *clientConnector) Consume(ctx context.Context, frame media.Frame) e
 	return client.server.write(ctx, ch, coderws.MessageText, frame.Payload)
 }
 
-func (client *clientConnector) SendCommand(ctx context.Context, payload []byte) error {
-	ch := client.channel(cmdChannel)
-	if ch == nil {
-		return fmt.Errorf("client_id=%s cmd channel not connected", client.id)
-	}
-	return client.server.write(ctx, ch, coderws.MessageText, payload)
-}
-
 func (client *clientConnector) MeasureRTT(ctx context.Context) (time.Duration, error) {
-	ch := client.channel(streamChannel)
+	ch := client.streamConn()
 	if ch == nil {
 		return 0, fmt.Errorf("client_id=%s stream channel not connected", client.id)
 	}
@@ -424,54 +363,17 @@ func (s *Server) write(ctx context.Context, ch *channelConn, msgType coderws.Mes
 	return ch.conn.Write(writeCtx, msgType, payload)
 }
 
-func (client *clientConnector) setChannel(kind channelKind, ch *channelConn) {
+func (client *clientConnector) setStream(ch *channelConn) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	switch kind {
-	case streamChannel:
-		client.stream = ch
-		client.streamPending = false
-	case cmdChannel:
-		client.cmd = ch
-		client.cmdPending = false
-	}
+	client.stream = ch
+	client.streamPending = false
 }
 
-func (client *clientConnector) channel(kind channelKind) *channelConn {
+func (client *clientConnector) streamConn() *channelConn {
 	client.mu.RLock()
 	defer client.mu.RUnlock()
-	return client.channelLocked(kind)
-}
-
-func (client *clientConnector) channelLocked(kind channelKind) *channelConn {
-	switch kind {
-	case streamChannel:
-		return client.stream
-	case cmdChannel:
-		return client.cmd
-	default:
-		return nil
-	}
-}
-
-func (client *clientConnector) pendingLocked(kind channelKind) bool {
-	switch kind {
-	case streamChannel:
-		return client.streamPending
-	case cmdChannel:
-		return client.cmdPending
-	default:
-		return false
-	}
-}
-
-func (client *clientConnector) setPendingLocked(kind channelKind, pending bool) {
-	switch kind {
-	case streamChannel:
-		client.streamPending = pending
-	case cmdChannel:
-		client.cmdPending = pending
-	}
+	return client.stream
 }
 
 func (client *clientConnector) channels() []*channelConn {
@@ -481,9 +383,6 @@ func (client *clientConnector) channels() []*channelConn {
 	channels := make([]*channelConn, 0, 2)
 	if client.stream != nil {
 		channels = append(channels, client.stream)
-	}
-	if client.cmd != nil {
-		channels = append(channels, client.cmd)
 	}
 	return channels
 }
@@ -503,12 +402,6 @@ func (client *clientConnector) getSession() *session.Session {
 func (client *clientConnector) reportMedia(ctx context.Context, frame media.Frame) {
 	if session := client.getSession(); session != nil {
 		session.OnMedia(ctx, frame)
-	}
-}
-
-func (client *clientConnector) reportCommand(ctx context.Context, payload []byte) {
-	if session := client.getSession(); session != nil {
-		session.OnCommand(ctx, payload)
 	}
 }
 
