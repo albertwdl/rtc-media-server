@@ -44,6 +44,22 @@ type Frame struct {
 	Metadata  map[string]string
 }
 
+// StageEvent 表示 stage 抛出的控制事件。
+// 事件由 Controller 统一仲裁，stage 不应直接操作 Connector。
+type StageEvent struct {
+	SessionID string
+	Type      string
+	Direction Direction
+	Stage     string
+	FrameSeq  uint64
+	Metadata  map[string]string
+}
+
+// ReferenceConsumer 接收下行参考信号，典型用途是给 AEC stage 提供回声参考。
+type ReferenceConsumer interface {
+	AddReference(ctx context.Context, frame Frame) error
+}
+
 // Stats 表示 pipeline 的基础运行统计。
 type Stats struct {
 	Queued    int

@@ -7,14 +7,14 @@ import (
 	"errors"
 	"testing"
 
-	"rtc-media-server/internal/endpoint"
+	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/pipeline"
 )
 
 func TestWebSocketJSONUnpackAppend(t *testing.T) {
-	eventCh := make(chan endpoint.Event, 1)
-	stage := NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event endpoint.Event) {
+	eventCh := make(chan connector.Event, 1)
+	stage := NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event connector.Event) {
 		eventCh <- event
 	})
 	audio := base64.StdEncoding.EncodeToString([]byte{0xD5})

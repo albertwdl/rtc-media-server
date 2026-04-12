@@ -7,7 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"rtc-media-server/internal/endpoint"
+	"rtc-media-server/internal/connector"
+	"rtc-media-server/internal/controller"
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/pipeline"
 )
@@ -18,20 +19,22 @@ type Config struct {
 	DownlinkQueueSize int
 	CloseTimeout      time.Duration
 	TargetFormat      media.Format
+	Controller        controller.Config
 }
 
 // Dependencies 定义 Session 层依赖的处理 stage 和业务输出 sink。
 type Dependencies struct {
-	UplinkStages      []media.Stage
-	DownlinkStages    []media.Stage
-	NewUplinkStages   func(session *Session) ([]media.Stage, error)
-	NewDownlinkStages func(session *Session) ([]media.Stage, error)
-	ApplicationSink   media.Sink
-	Logger            *slog.Logger
-	OnSession         func(session *Session)
-	OnCommand         func(session *Session, payload []byte)
-	OnEvent           func(session *Session, event endpoint.Event)
-	OnError           func(session *Session, err error)
+	UplinkStages        []media.Stage
+	DownlinkStages      []media.Stage
+	NewUplinkStages     func(session *Session) ([]media.Stage, error)
+	NewDownlinkStages   func(session *Session) ([]media.Stage, error)
+	NewServiceConnector func(session *Session) (connector.ServiceConnector, error)
+	NewController       func(session *Session, deps controller.Dependencies) (*controller.Controller, error)
+	Logger              *slog.Logger
+	OnSession           func(session *Session)
+	OnCommand           func(session *Session, payload []byte)
+	OnEvent             func(session *Session, event connector.Event)
+	OnError             func(session *Session, err error)
 }
 
 // Manager 管理所有业务 Session。
@@ -43,11 +46,13 @@ type Manager struct {
 	sessions map[string]*Session
 }
 
-// Session 是业务会话核心，持有 Endpoint 和上下行两条 pipeline。
+// Session 是业务会话核心，持有 Connector、Controller 和上下行两条 pipeline。
 type Session struct {
-	id       string
-	endpoint endpoint.Endpoint
-	logger   *slog.Logger
+	id               string
+	clientConnector  connector.ClientConnector
+	serviceConnector connector.ServiceConnector
+	controller       *controller.Controller
+	logger           *slog.Logger
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -63,7 +68,7 @@ type Session struct {
 	ok  bool
 
 	onCommand func(session *Session, payload []byte)
-	onEvent   func(session *Session, event endpoint.Event)
+	onEvent   func(session *Session, event connector.Event)
 	onError   func(session *Session, err error)
 }
 
@@ -91,61 +96,75 @@ func NewManager(cfg Config, deps Dependencies) *Manager {
 	}
 }
 
-// CreateOrAttach 根据客户端 Endpoint 创建或复用 Session。
-func (m *Manager) CreateOrAttach(ctx context.Context, ep endpoint.Endpoint) (*Session, bool, error) {
-	return m.Attach(ctx, ep)
+// CreateOrAttach 根据客户端 Connector 创建或复用 Session。
+func (m *Manager) CreateOrAttach(ctx context.Context, client connector.ClientConnector) (*Session, bool, error) {
+	return m.Attach(ctx, client)
 }
 
-// Attach 把一个客户端 Endpoint 挂到业务 Session 上。
-// 如果该 Endpoint ID 已存在，则复用已有 Session。
-func (m *Manager) Attach(ctx context.Context, ep endpoint.Endpoint) (*Session, bool, error) {
+// Attach 把一个客户端 Connector 挂到业务 Session 上。
+// 如果该 Connector ID 已存在，则复用已有 Session。
+func (m *Manager) Attach(ctx context.Context, client connector.ClientConnector) (*Session, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	existing := m.sessions[ep.ID()]
+	existing := m.sessions[client.ID()]
 	if existing != nil {
 		return existing, false, nil
 	}
 
 	sessionCtx, cancel := context.WithCancel(context.Background())
 	logger := m.deps.Logger.With(
-		slog.String("client_id", ep.ID()),
-		slog.String("protocol", ep.Protocol()),
+		slog.String("client_id", client.ID()),
+		slog.String("protocol", client.Protocol()),
 	)
 	s := &Session{
-		id:        ep.ID(),
-		endpoint:  ep,
-		logger:    logger,
-		ctx:       sessionCtx,
-		cancel:    cancel,
-		done:      make(chan struct{}),
-		onCommand: m.deps.OnCommand,
-		onEvent:   m.deps.OnEvent,
-		onError:   m.deps.OnError,
+		id:              client.ID(),
+		clientConnector: client,
+		logger:          logger,
+		ctx:             sessionCtx,
+		cancel:          cancel,
+		done:            make(chan struct{}),
+		onCommand:       m.deps.OnCommand,
+		onEvent:         m.deps.OnEvent,
+		onError:         m.deps.OnError,
 	}
 
-	uplinkSink := m.deps.ApplicationSink
-	if uplinkSink == nil {
-		uplinkSink = media.SinkFunc(func(context.Context, media.Frame) error { return nil })
+	service, err := m.serviceConnectorFor(s)
+	if err != nil {
+		cancel()
+		return nil, false, err
 	}
+	s.serviceConnector = service
+
+	ctrl, err := m.controllerFor(s)
+	if err != nil {
+		cancel()
+		_ = service.Close(ctx, "create controller failed")
+		return nil, false, err
+	}
+	s.controller = ctrl
 
 	uplinkStages, err := m.uplinkStagesFor(s)
 	if err != nil {
 		cancel()
+		_ = ctrl.Close(ctx)
+		_ = service.Close(ctx, "create uplink stages failed")
 		return nil, false, err
 	}
 	downlinkStages, err := m.downlinkStagesFor(s)
 	if err != nil {
 		cancel()
+		_ = ctrl.Close(ctx)
+		_ = service.Close(ctx, "create downlink stages failed")
 		return nil, false, err
 	}
 
-	uplink := pipeline.NewQueuePipeline("uplink", m.cfg.UplinkQueueSize, uplinkStages, uplinkSink, logger)
+	uplink := pipeline.NewQueuePipeline("uplink", m.cfg.UplinkQueueSize, uplinkStages, service, logger)
 	uplink.SetErrorHandler(func(ctx context.Context, frame media.Frame, err error) {
 		s.OnError(ctx, fmt.Errorf("uplink pipeline: %w", err))
 	})
 	downlink := pipeline.NewQueuePipeline("downlink", m.cfg.DownlinkQueueSize, downlinkStages, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
-		return ep.Consume(ctx, frame)
+		return client.Consume(ctx, frame)
 	}), logger)
 	downlink.SetErrorHandler(func(ctx context.Context, frame media.Frame, err error) {
 		s.OnError(ctx, fmt.Errorf("downlink pipeline: %w", err))
@@ -155,20 +174,36 @@ func (m *Manager) Attach(ctx context.Context, ep endpoint.Endpoint) (*Session, b
 
 	if err := s.uplink.Start(sessionCtx); err != nil {
 		cancel()
+		_ = ctrl.Close(ctx)
+		_ = service.Close(ctx, "start uplink failed")
 		return nil, false, err
 	}
 	if err := s.downlink.Start(sessionCtx); err != nil {
 		cancel()
 		_ = s.uplink.Close(ctx)
+		_ = ctrl.Close(ctx)
+		_ = service.Close(ctx, "start downlink failed")
 		return nil, false, err
 	}
-	if err := ep.Start(sessionCtx, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
+	if err := service.Start(sessionCtx, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
+		return s.EnqueueDownlink(ctx, frame)
+	})); err != nil {
+		cancel()
+		_ = s.uplink.Close(ctx)
+		_ = s.downlink.Close(ctx)
+		_ = ctrl.Close(ctx)
+		_ = service.Close(ctx, "start service connector failed")
+		return nil, false, err
+	}
+	if err := client.Start(sessionCtx, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
 		s.OnMedia(ctx, frame)
 		return nil
 	})); err != nil {
 		cancel()
 		_ = s.uplink.Close(ctx)
 		_ = s.downlink.Close(ctx)
+		_ = ctrl.Close(ctx)
+		_ = service.Close(ctx, "start client connector failed")
 		return nil, false, err
 	}
 
@@ -178,6 +213,29 @@ func (m *Manager) Attach(ctx context.Context, ep endpoint.Endpoint) (*Session, b
 	}
 	logger.Info("client_id=" + s.id + " session created")
 	return s, true, nil
+}
+
+func (m *Manager) serviceConnectorFor(s *Session) (connector.ServiceConnector, error) {
+	if m.deps.NewServiceConnector != nil {
+		return m.deps.NewServiceConnector(s)
+	}
+	return connector.NewNoopServiceConnector(s.id), nil
+}
+
+func (m *Manager) controllerFor(s *Session) (*controller.Controller, error) {
+	deps := controller.Dependencies{
+		SessionID:        s.id,
+		ClientConnector:  s.clientConnector,
+		ServiceConnector: s.serviceConnector,
+		Logger:           s.logger,
+		CloseSession: func(ctx context.Context, reason string) error {
+			return s.Close(ctx, reason)
+		},
+	}
+	if m.deps.NewController != nil {
+		return m.deps.NewController(s, deps)
+	}
+	return controller.New(m.cfg.Controller, deps), nil
 }
 
 func (m *Manager) uplinkStagesFor(s *Session) ([]media.Stage, error) {
@@ -240,7 +298,11 @@ func (s *Session) Done() <-chan struct{} { return s.done }
 
 func (s *Session) Logger() *slog.Logger { return s.logger }
 
-func (s *Session) Endpoint() endpoint.Endpoint { return s.endpoint }
+func (s *Session) ClientConnector() connector.ClientConnector { return s.clientConnector }
+
+func (s *Session) ServiceConnector() connector.ServiceConnector { return s.serviceConnector }
+
+func (s *Session) Controller() *controller.Controller { return s.controller }
 
 func (s *Session) Uplink() media.Pipeline { return s.uplink }
 
@@ -263,11 +325,11 @@ func (s *Session) EnqueueDownlink(ctx context.Context, frame media.Frame) error 
 }
 
 func (s *Session) SendCommand(ctx context.Context, payload []byte) error {
-	return s.endpoint.SendCommand(ctx, payload)
+	return s.clientConnector.SendCommand(ctx, payload)
 }
 
 func (s *Session) MeasureRTT(ctx context.Context) (time.Duration, error) {
-	rtt, err := s.endpoint.MeasureRTT(ctx)
+	rtt, err := s.clientConnector.MeasureRTT(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -288,9 +350,15 @@ func (s *Session) Close(ctx context.Context, reason string) error {
 	var closeErr error
 	s.once.Do(func() {
 		s.cancel()
+		if s.controller != nil {
+			_ = s.controller.Close(ctx)
+		}
 		_ = s.uplink.Close(ctx)
 		_ = s.downlink.Close(ctx)
-		if err := s.endpoint.Close(ctx, reason); err != nil {
+		if s.serviceConnector != nil {
+			_ = s.serviceConnector.Close(ctx, reason)
+		}
+		if err := s.clientConnector.Close(ctx, reason); err != nil {
 			closeErr = err
 		}
 		close(s.done)
@@ -317,8 +385,8 @@ func (s *Session) OnCommand(ctx context.Context, payload []byte) {
 	}
 }
 
-func (s *Session) OnEvent(ctx context.Context, event endpoint.Event) {
-	s.logger.Info("client_id="+s.id+" endpoint event", slog.String("event_type", event.Type), slog.Int("bytes", len(event.Raw)))
+func (s *Session) OnEvent(ctx context.Context, event connector.Event) {
+	s.logger.Info("client_id="+s.id+" connector event", slog.String("event_type", event.Type), slog.Int("bytes", len(event.Raw)))
 	if s.onEvent != nil {
 		s.onEvent(s, event)
 	}
@@ -333,7 +401,7 @@ func (s *Session) OnError(ctx context.Context, err error) {
 
 func (s *Session) OnClosed(ctx context.Context, err error) {
 	s.setErr(err)
-	s.logger.Info("client_id="+s.id+" endpoint closed", slog.Any("error", err))
+	s.logger.Info("client_id="+s.id+" connector closed", slog.Any("error", err))
 }
 
 func (s *Session) setErr(err error) {

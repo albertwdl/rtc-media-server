@@ -13,24 +13,24 @@ import (
 
 	coderws "github.com/coder/websocket"
 
-	"rtc-media-server/internal/endpoint"
+	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/session"
 )
 
-// Server 是全局 WebSocket 监听器，负责 WSS 接入并创建每个客户端的 Endpoint。
+// Server 是全局 WebSocket 监听器，负责 WSS 接入并创建每个客户端的 Connector。
 type Server struct {
 	cfg     Config
 	manager *session.Manager
 	logger  *slog.Logger
 	httpSrv *http.Server
-	clients map[string]*clientEndpoint
+	clients map[string]*clientConnector
 	mu      sync.RWMutex
 	started bool
 	stop    context.CancelFunc
 }
 
-type clientEndpoint struct {
+type clientConnector struct {
 	id     string
 	server *Server
 
@@ -76,7 +76,7 @@ func NewServer(cfg Config, manager *session.Manager, logger *slog.Logger) (*Serv
 		cfg:     cfg,
 		manager: manager,
 		logger:  logger,
-		clients: make(map[string]*clientEndpoint),
+		clients: make(map[string]*clientConnector),
 	}
 
 	mux := http.NewServeMux()
@@ -201,7 +201,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request, kind ch
 	s.readCmd(r.Context(), client, ch)
 }
 
-func (s *Server) readStream(ctx context.Context, client *clientEndpoint, ch *channelConn) {
+func (s *Server) readStream(ctx context.Context, client *clientConnector, ch *channelConn) {
 	var readErr error
 	defer func() {
 		_ = ch.conn.Close(coderws.StatusNormalClosure, "stream channel closed")
@@ -223,7 +223,7 @@ func (s *Server) readStream(ctx context.Context, client *clientEndpoint, ch *cha
 	}
 }
 
-func (s *Server) handleStreamPayload(ctx context.Context, client *clientEndpoint, payload []byte) {
+func (s *Server) handleStreamPayload(ctx context.Context, client *clientConnector, payload []byte) {
 	client.reportMedia(ctx, media.Frame{
 		SessionID: client.id,
 		Direction: media.DirectionUplink,
@@ -241,7 +241,7 @@ func (s *Server) handleStreamPayload(ctx context.Context, client *clientEndpoint
 	})
 }
 
-func (s *Server) readCmd(ctx context.Context, client *clientEndpoint, ch *channelConn) {
+func (s *Server) readCmd(ctx context.Context, client *clientConnector, ch *channelConn) {
 	var readErr error
 	defer func() {
 		_ = ch.conn.Close(coderws.StatusNormalClosure, "cmd channel closed")
@@ -263,13 +263,13 @@ func (s *Server) readCmd(ctx context.Context, client *clientEndpoint, ch *channe
 	}
 }
 
-func (s *Server) reserveChannel(clientID string, kind channelKind) (*clientEndpoint, error) {
+func (s *Server) reserveChannel(clientID string, kind channelKind) (*clientConnector, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	client := s.clients[clientID]
 	if client == nil {
-		client = &clientEndpoint{id: clientID, server: s, done: make(chan struct{})}
+		client = &clientConnector{id: clientID, server: s, done: make(chan struct{})}
 		s.clients[clientID] = client
 	}
 
@@ -284,7 +284,7 @@ func (s *Server) reserveChannel(clientID string, kind channelKind) (*clientEndpo
 
 func (s *Server) unregisterChannel(clientID string, kind channelKind, err error) {
 	var (
-		client       *clientEndpoint
+		client       *clientConnector
 		disconnected bool
 	)
 
@@ -322,11 +322,11 @@ func (s *Server) unregisterChannel(clientID string, kind channelKind, err error)
 	}
 }
 
-func (s *Server) snapshotClients() []*clientEndpoint {
+func (s *Server) snapshotClients() []*clientConnector {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	clients := make([]*clientEndpoint, 0, len(s.clients))
+	clients := make([]*clientConnector, 0, len(s.clients))
 	for _, client := range s.clients {
 		clients = append(clients, client)
 	}
@@ -357,26 +357,26 @@ func (s *Server) rttLoop(ctx context.Context) {
 	}
 }
 
-func (client *clientEndpoint) Protocol() string { return "websocket" }
+func (client *clientConnector) Protocol() string { return "websocket" }
 
-func (client *clientEndpoint) ID() string { return client.id }
+func (client *clientConnector) ID() string { return client.id }
 
-func (client *clientEndpoint) Start(ctx context.Context, sink media.Sink) error {
+func (client *clientConnector) Start(ctx context.Context, sink media.Sink) error {
 	return nil
 }
 
-func (client *clientEndpoint) Consume(ctx context.Context, frame media.Frame) error {
+func (client *clientConnector) Consume(ctx context.Context, frame media.Frame) error {
 	ch := client.channel(streamChannel)
 	if ch == nil {
 		return fmt.Errorf("client_id=%s stream channel not connected", client.id)
 	}
 	if frame.Format.Codec != media.CodecJSON {
-		return fmt.Errorf("client_id=%s websocket endpoint requires json frame, got %s", client.id, frame.Format.Codec)
+		return fmt.Errorf("client_id=%s websocket connector requires json frame, got %s", client.id, frame.Format.Codec)
 	}
 	return client.server.write(ctx, ch, coderws.MessageText, frame.Payload)
 }
 
-func (client *clientEndpoint) SendCommand(ctx context.Context, payload []byte) error {
+func (client *clientConnector) SendCommand(ctx context.Context, payload []byte) error {
 	ch := client.channel(cmdChannel)
 	if ch == nil {
 		return fmt.Errorf("client_id=%s cmd channel not connected", client.id)
@@ -384,7 +384,7 @@ func (client *clientEndpoint) SendCommand(ctx context.Context, payload []byte) e
 	return client.server.write(ctx, ch, coderws.MessageText, payload)
 }
 
-func (client *clientEndpoint) MeasureRTT(ctx context.Context) (time.Duration, error) {
+func (client *clientConnector) MeasureRTT(ctx context.Context) (time.Duration, error) {
 	ch := client.channel(streamChannel)
 	if ch == nil {
 		return 0, fmt.Errorf("client_id=%s stream channel not connected", client.id)
@@ -399,9 +399,9 @@ func (client *clientEndpoint) MeasureRTT(ctx context.Context) (time.Duration, er
 	return time.Since(start), nil
 }
 
-func (client *clientEndpoint) Close(ctx context.Context, reason string) error {
+func (client *clientConnector) Close(ctx context.Context, reason string) error {
 	if reason == "" {
-		reason = "endpoint closed"
+		reason = "connector closed"
 	}
 	for _, ch := range client.channels() {
 		ch.writeMu.Lock()
@@ -412,7 +412,7 @@ func (client *clientEndpoint) Close(ctx context.Context, reason string) error {
 	return nil
 }
 
-func (client *clientEndpoint) Done() <-chan struct{} {
+func (client *clientConnector) Done() <-chan struct{} {
 	return client.done
 }
 
@@ -425,7 +425,7 @@ func (s *Server) write(ctx context.Context, ch *channelConn, msgType coderws.Mes
 	return ch.conn.Write(writeCtx, msgType, payload)
 }
 
-func (client *clientEndpoint) setChannel(kind channelKind, ch *channelConn) {
+func (client *clientConnector) setChannel(kind channelKind, ch *channelConn) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	switch kind {
@@ -438,13 +438,13 @@ func (client *clientEndpoint) setChannel(kind channelKind, ch *channelConn) {
 	}
 }
 
-func (client *clientEndpoint) channel(kind channelKind) *channelConn {
+func (client *clientConnector) channel(kind channelKind) *channelConn {
 	client.mu.RLock()
 	defer client.mu.RUnlock()
 	return client.channelLocked(kind)
 }
 
-func (client *clientEndpoint) channelLocked(kind channelKind) *channelConn {
+func (client *clientConnector) channelLocked(kind channelKind) *channelConn {
 	switch kind {
 	case streamChannel:
 		return client.stream
@@ -455,7 +455,7 @@ func (client *clientEndpoint) channelLocked(kind channelKind) *channelConn {
 	}
 }
 
-func (client *clientEndpoint) pendingLocked(kind channelKind) bool {
+func (client *clientConnector) pendingLocked(kind channelKind) bool {
 	switch kind {
 	case streamChannel:
 		return client.streamPending
@@ -466,7 +466,7 @@ func (client *clientEndpoint) pendingLocked(kind channelKind) bool {
 	}
 }
 
-func (client *clientEndpoint) setPendingLocked(kind channelKind, pending bool) {
+func (client *clientConnector) setPendingLocked(kind channelKind, pending bool) {
 	switch kind {
 	case streamChannel:
 		client.streamPending = pending
@@ -475,7 +475,7 @@ func (client *clientEndpoint) setPendingLocked(kind channelKind, pending bool) {
 	}
 }
 
-func (client *clientEndpoint) channels() []*channelConn {
+func (client *clientConnector) channels() []*channelConn {
 	client.mu.RLock()
 	defer client.mu.RUnlock()
 
@@ -489,49 +489,49 @@ func (client *clientEndpoint) channels() []*channelConn {
 	return channels
 }
 
-func (client *clientEndpoint) setSession(session *session.Session) {
+func (client *clientConnector) setSession(session *session.Session) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	client.session = session
 }
 
-func (client *clientEndpoint) getSession() *session.Session {
+func (client *clientConnector) getSession() *session.Session {
 	client.mu.RLock()
 	defer client.mu.RUnlock()
 	return client.session
 }
 
-func (client *clientEndpoint) reportMedia(ctx context.Context, frame media.Frame) {
+func (client *clientConnector) reportMedia(ctx context.Context, frame media.Frame) {
 	if session := client.getSession(); session != nil {
 		session.OnMedia(ctx, frame)
 	}
 }
 
-func (client *clientEndpoint) reportCommand(ctx context.Context, payload []byte) {
+func (client *clientConnector) reportCommand(ctx context.Context, payload []byte) {
 	if session := client.getSession(); session != nil {
 		session.OnCommand(ctx, payload)
 	}
 }
 
-func (client *clientEndpoint) reportEvent(ctx context.Context, event endpoint.Event) {
+func (client *clientConnector) reportEvent(ctx context.Context, event connector.Event) {
 	if session := client.getSession(); session != nil {
 		session.OnEvent(ctx, event)
 	}
 }
 
-func (client *clientEndpoint) reportError(ctx context.Context, err error) {
+func (client *clientConnector) reportError(ctx context.Context, err error) {
 	if session := client.getSession(); session != nil {
 		session.OnError(ctx, err)
 		return
 	}
 	client.server.logger.Error(
-		"client_id="+client.id+" websocket endpoint error",
+		"client_id="+client.id+" websocket connector error",
 		slog.String("client_id", client.id),
 		slog.Any("error", err),
 	)
 }
 
-func (client *clientEndpoint) closeDone() {
+func (client *clientConnector) closeDone() {
 	client.closeOnce.Do(func() {
 		close(client.done)
 	})

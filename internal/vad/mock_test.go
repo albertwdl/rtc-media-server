@@ -3,7 +3,9 @@ package vad
 import (
 	"context"
 	"testing"
+	"time"
 
+	"rtc-media-server/internal/controller"
 	"rtc-media-server/internal/media"
 )
 
@@ -37,5 +39,30 @@ func TestMockStageProcessPassesFrameThrough(t *testing.T) {
 	}
 	if err := stage.Close(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)
+	}
+}
+
+func TestMockStageEmitsSilenceTimeout(t *testing.T) {
+	stage := NewMockStage(nil)
+	eventCh := make(chan media.StageEvent, 1)
+	stage.SetEventEmitter(func(ctx context.Context, event media.StageEvent) {
+		eventCh <- event
+	})
+
+	stage.EmitSilenceTimeout(context.Background(), media.Frame{
+		SessionID: "client-a",
+		Direction: media.DirectionUplink,
+	})
+
+	select {
+	case event := <-eventCh:
+		if event.Type != controller.EventSilenceTimeout {
+			t.Fatalf("event type = %q", event.Type)
+		}
+		if event.Stage != stage.Name() {
+			t.Fatalf("stage = %q", event.Stage)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for event")
 	}
 }

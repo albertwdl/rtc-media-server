@@ -20,6 +20,7 @@ type MockEngine struct {
 
 	mu    sync.Mutex
 	files map[string]*os.File
+	refs  int
 }
 
 // NewMockEngine 创建一个模拟 AEC+AGC+ANS 语音增强引擎。
@@ -42,6 +43,21 @@ func NewMockEngine(outputDir string, logger *slog.Logger) (*MockEngine, error) {
 }
 
 func (e *MockEngine) Name() string { return "aec_agc_ans_mock" }
+
+// AddReference 接收下行参考信号。真实 AEC 会把该信号写入回声参考缓冲区。
+func (e *MockEngine) AddReference(ctx context.Context, frame media.Frame) error {
+	e.mu.Lock()
+	e.refs++
+	e.mu.Unlock()
+	e.logger.Info(
+		"client_id="+frame.SessionID+" audio enhancement reference received",
+		slog.String("client_id", frame.SessionID),
+		slog.String("direction", string(frame.Direction)),
+		slog.String("codec", frame.Format.Codec),
+		slog.Int("bytes", len(frame.Payload)),
+	)
+	return nil
+}
 
 // Process 实现 media.Stage，模拟 AEC+AGC+ANS 处理并透传媒体帧。
 func (e *MockEngine) Process(ctx context.Context, frame media.Frame) (media.Frame, error) {

@@ -19,6 +19,12 @@ session:
   close_timeout: "3s"
   idle_timeout: "0s"
 
+controller:
+  initial_silence_timeout: "15s"
+  silence_timeout: "5s"
+  reference_queue_size: 16
+  reference_drop_policy: "drop_newest"
+
 pipeline:
   uplink_queue_size: 32
   downlink_queue_size: 32
@@ -49,6 +55,8 @@ pipeline:
         params:
           sample_rate: 8000
           channels: 1
+      - name: "reference_tap"
+        enabled: true
       - name: "alaw_encode"
         enabled: true
       - name: "base64_encode"

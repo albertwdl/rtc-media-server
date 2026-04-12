@@ -20,7 +20,7 @@ import (
 
 	"rtc-media-server/internal/application"
 	"rtc-media-server/internal/audioenhancement"
-	"rtc-media-server/internal/endpoint"
+	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/pipeline"
 	"rtc-media-server/internal/pipeline/stages"
@@ -50,30 +50,36 @@ func main() {
 		TargetFormat:      media.DefaultPCM16Format(),
 	}, session.Dependencies{
 		Logger: logger,
+		NewServiceConnector: func(session *session.Session) (connector.ServiceConnector, error) {
+			return application.NewMockConnector(session.ID(), session.Logger()), nil
+		},
 		NewUplinkStages: func(session *session.Session) ([]media.Stage, error) {
 			engine, err := audioenhancement.NewMockEngine("", session.Logger())
 			if err != nil {
 				return nil, err
 			}
+			session.Controller().RegisterReferenceConsumer(engine.Name(), engine)
+			vadStage := vad.NewMockStage(session.Logger())
+			vadStage.SetEventEmitter(session.Controller().Emit)
 			return []media.Stage{
-				stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event endpoint.Event) {
+				stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event connector.Event) {
 					session.OnEvent(ctx, event)
 				}),
 				stages.NewBase64Decode(),
 				stages.NewALawDecode(media.DefaultPCM16Format()),
 				engine,
-				vad.NewMockStage(session.Logger()),
+				vadStage,
 			}, nil
 		},
 		NewDownlinkStages: func(session *session.Session) ([]media.Stage, error) {
 			return []media.Stage{
 				pipeline.NewPCM16Normalizer(media.DefaultPCM16Format()),
+				stages.NewReferenceTap(session.Controller().OnDownlinkReference),
 				stages.NewALawEncode(),
 				stages.NewBase64Encode(),
 				stages.NewWebSocketJSONPack(),
 			}, nil
 		},
-		ApplicationSink: application.NewMockSink(logger),
 		OnSession: func(session *session.Session) {
 			session.Logger().Info("client_id=" + session.ID() + " session ready")
 		},

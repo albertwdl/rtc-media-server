@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"rtc-media-server/internal/endpoint"
+	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/pipeline"
 )
@@ -17,7 +17,7 @@ const (
 )
 
 // EventHandler 用于把 stream JSON 事件上报给 Session。
-type EventHandler func(ctx context.Context, frame media.Frame, event endpoint.Event)
+type EventHandler func(ctx context.Context, frame media.Frame, event connector.Event)
 
 // WebSocketJSONUnpackStage 将 WebSocket stream JSON 解包成后续 stage 可处理的 base64 音频 payload。
 type WebSocketJSONUnpackStage struct {
@@ -46,7 +46,7 @@ func (s *WebSocketJSONUnpackStage) Process(ctx context.Context, frame media.Fram
 	}
 
 	if s.onEvent != nil {
-		s.onEvent(ctx, frame, endpoint.Event{
+		s.onEvent(ctx, frame, connector.Event{
 			Type: raw.Type,
 			Raw:  append([]byte(nil), frame.Payload...),
 			Fields: map[string]string{

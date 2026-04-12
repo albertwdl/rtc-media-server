@@ -17,12 +17,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	coderws "github.com/coder/websocket"
 
-	"rtc-media-server/internal/endpoint"
+	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/pipeline"
 	"rtc-media-server/internal/pipeline/stages"
@@ -32,10 +33,7 @@ import (
 func TestStreamAppendJSONEntersSessionUplink(t *testing.T) {
 	frameCh := make(chan media.Frame, 1)
 	_, url, _ := newTestTLSServer(t, session.Dependencies{
-		ApplicationSink: media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
-			frameCh <- frame
-			return nil
-		}),
+		NewServiceConnector: newCapturingServiceConnector(frameCh),
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -71,11 +69,8 @@ func TestNonAppendStreamJSONDoesNotEmitMedia(t *testing.T) {
 	frameCh := make(chan media.Frame, 1)
 	eventCh := make(chan string, 1)
 	_, url, _ := newTestTLSServer(t, session.Dependencies{
-		ApplicationSink: media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
-			frameCh <- frame
-			return nil
-		}),
-		OnEvent: func(_ *session.Session, event endpoint.Event) {
+		NewServiceConnector: newCapturingServiceConnector(frameCh),
+		OnEvent: func(_ *session.Session, event connector.Event) {
 			eventCh <- event.Type
 		},
 	})
@@ -332,7 +327,7 @@ func newTestTLSServer(t *testing.T, deps session.Dependencies) (*Server, string,
 	if deps.NewUplinkStages == nil {
 		deps.NewUplinkStages = func(sess *session.Session) ([]media.Stage, error) {
 			return []media.Stage{
-				stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event endpoint.Event) {
+				stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event connector.Event) {
 					sess.OnEvent(ctx, event)
 				}),
 				stages.NewBase64Decode(),
@@ -365,6 +360,43 @@ func newTestTLSServer(t *testing.T, deps session.Dependencies) (*Server, string,
 	t.Cleanup(ts.Close)
 	return server, "wss" + ts.URL[len("https"):], ts.Client()
 }
+
+func newCapturingServiceConnector(frameCh chan<- media.Frame) func(*session.Session) (connector.ServiceConnector, error) {
+	return func(sess *session.Session) (connector.ServiceConnector, error) {
+		return &capturingServiceConnector{
+			id:      sess.ID(),
+			frameCh: frameCh,
+			done:    make(chan struct{}),
+		}, nil
+	}
+}
+
+type capturingServiceConnector struct {
+	id      string
+	frameCh chan<- media.Frame
+	done    chan struct{}
+	once    sync.Once
+}
+
+func (c *capturingServiceConnector) ID() string { return c.id }
+
+func (c *capturingServiceConnector) Protocol() string { return "capturing_service" }
+
+func (c *capturingServiceConnector) Start(ctx context.Context, downlink media.Sink) error { return nil }
+
+func (c *capturingServiceConnector) Consume(ctx context.Context, frame media.Frame) error {
+	c.frameCh <- frame
+	return nil
+}
+
+func (c *capturingServiceConnector) Flush(ctx context.Context, reason string) error { return nil }
+
+func (c *capturingServiceConnector) Close(ctx context.Context, reason string) error {
+	c.once.Do(func() { close(c.done) })
+	return nil
+}
+
+func (c *capturingServiceConnector) Done() <-chan struct{} { return c.done }
 
 func dialTestWS(t *testing.T, ctx context.Context, url string, clientID string) *coderws.Conn {
 	t.Helper()
