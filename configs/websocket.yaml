@@ -34,8 +34,6 @@ pipeline:
     queue_size: 32
     on_error: "drop"
     stages:
-      - name: "websocket_json_unpack"
-        enabled: true
       - name: "base64_decode"
         enabled: true
       - name: "alaw_decode"
@@ -58,8 +56,6 @@ pipeline:
       - name: "alaw_encode"
         enabled: true
       - name: "base64_encode"
-        enabled: true
-      - name: "websocket_json_pack"
         enabled: true
 
 logging:

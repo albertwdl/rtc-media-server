@@ -138,9 +138,6 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 	vadStage.SetEventEmitter(s.Controller().Emit)
 
 	uplinkStages := []media.Stage{
-		stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event media.Event) {
-			s.OnEvent(ctx, event)
-		}),
 		stages.NewBase64Decode(),
 		stages.NewALawDecode(cfg.TargetFormat),
 		engine,
@@ -151,7 +148,6 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 		stages.NewReferenceTap(s.Controller().OnDownlinkReference),
 		stages.NewALawEncode(),
 		stages.NewBase64Encode(),
-		stages.NewWebSocketJSONPack(),
 	}
 
 	s.uplink = s.newPipeline("uplink", cfg.UplinkQueueSize, uplinkStages, media.OutputFunc(service.SendData))
@@ -333,7 +329,7 @@ func (s *Session) Close(ctx context.Context, reason string) error {
 	return closeErr
 }
 
-// OnEvent 接收 Connector 或协议适配 stage 上报的非媒体事件。
+// OnEvent 接收 Connector 上报的非媒体 stream 事件。
 func (s *Session) OnEvent(ctx context.Context, event media.Event) {
 	log.Infof("client_id=%s connector event event_type=%s bytes=%d", s.id, event.Type, len(event.Raw))
 }

@@ -34,7 +34,7 @@ func NewMockEngine(outputDir string) (*MockEngine, error) {
 		outputDir = filepath.Join("runtime", "pcm")
 	}
 	if err := os.MkdirAll(outputDir, pcmOutputDirPerm); err != nil {
-		return nil, fmt.Errorf("创建 PCM 输出目录失败: %w", err)
+		return nil, fmt.Errorf("create PCM output directory failed: %w", err)
 	}
 	return &MockEngine{
 		outputDir: outputDir,
@@ -92,7 +92,7 @@ func (e *MockEngine) SavePCM(clientID string, pcm []byte) error {
 		return err
 	}
 	if _, err := file.Write(pcm); err != nil {
-		return fmt.Errorf("写入 PCM 文件失败: %w", err)
+		return fmt.Errorf("write PCM file failed: %w", err)
 	}
 	return nil
 }
@@ -105,7 +105,7 @@ func (e *MockEngine) Close(ctx context.Context) error {
 	var firstErr error
 	for clientID, file := range e.files {
 		if err := file.Close(); err != nil && firstErr == nil {
-			firstErr = fmt.Errorf("关闭 PCM 文件失败 client=%s: %w", clientID, err)
+			firstErr = fmt.Errorf("close PCM file failed client=%s: %w", clientID, err)
 		}
 		delete(e.files, clientID)
 	}
@@ -123,7 +123,7 @@ func (e *MockEngine) CloseSession(clientID string) error {
 	}
 	delete(e.files, clientID)
 	if err := file.Close(); err != nil {
-		return fmt.Errorf("关闭 PCM 文件失败: %w", err)
+		return fmt.Errorf("close PCM file failed: %w", err)
 	}
 	return nil
 }
@@ -138,7 +138,7 @@ func (e *MockEngine) fileLocked(clientID string) (*os.File, error) {
 	path := e.filePath(clientID)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, pcmOutputFilePerm)
 	if err != nil {
-		return nil, fmt.Errorf("打开 PCM 文件失败: %w", err)
+		return nil, fmt.Errorf("open PCM file failed: %w", err)
 	}
 	e.files[clientID] = file
 	return file, nil

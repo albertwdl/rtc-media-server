@@ -45,11 +45,11 @@ const (
 func main() {
 	cfg, err := websocket.LoadConfig(configPath)
 	if err != nil {
-		fatal("加载配置失败", err)
+		fatal("load config failed", err)
 	}
 
 	if err := ensureDemoCertificate(cfg.TLS.CertFile, cfg.TLS.KeyFile); err != nil {
-		fatal("准备本地 WSS 证书失败", err)
+		fatal("prepare local WSS certificate failed", err)
 	}
 
 	sessionManager := session.NewManager(session.Config{
@@ -67,6 +67,11 @@ func main() {
 		OnDisconnect: func(ctx context.Context, clientID string, err error) {
 			sessionManager.Remove(ctx, clientID, err)
 		},
+		OnEvent: func(ctx context.Context, clientID string, event media.Event) {
+			if sess, ok := sessionManager.Get(clientID); ok {
+				sess.OnEvent(ctx, event)
+			}
+		},
 		OnError: func(ctx context.Context, clientID string, err error) {
 			if sess, ok := sessionManager.Get(clientID); ok {
 				sess.OnError(ctx, err)
@@ -76,7 +81,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		fatal("创建 WebSocket 服务失败", err)
+		fatal("create WebSocket server failed", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -85,7 +90,7 @@ func main() {
 	addr := net.JoinHostPort(cfg.Listen, strconv.Itoa(cfg.Port))
 	log.Infof("rtc-media-server demo started stream_addr=wss://%s%s", addr, cfg.StreamPath)
 	if err := server.Start(ctx); err != nil {
-		fatal("WebSocket 服务退出", err)
+		fatal("WebSocket server exited", err)
 	}
 	log.Infof("rtc-media-server demo stopped")
 }
@@ -136,7 +141,7 @@ func ensureDemoCertificate(certFile, keyFile string) error {
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: demoCertPEMType, Bytes: certDER})
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: demoPrivateKeyType, Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
 	if len(certPEM) == 0 || len(keyPEM) == 0 {
-		return errors.New("编码本地 demo 证书失败")
+		return errors.New("encode local demo certificate failed")
 	}
 	if err := os.WriteFile(certFile, certPEM, demoCertFilePerm); err != nil {
 		return err

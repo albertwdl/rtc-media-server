@@ -56,7 +56,7 @@ func TestSessionDownlinkPipelineConsumesToClient(t *testing.T) {
 
 	select {
 	case frame := <-client.consumed:
-		if frame.Format.Codec != media.CodecJSON {
+		if frame.Format.Codec != media.CodecBase64 {
 			t.Fatalf("downlink codec = %q", frame.Format.Codec)
 		}
 		if frame.Direction != media.DirectionDownlink {

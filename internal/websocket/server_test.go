@@ -52,8 +52,13 @@ func TestStreamAppendJSONEntersSessionUplink(t *testing.T) {
 // TestNonAppendStreamJSONDoesNotEmitMedia 验证非 append 事件不会进入媒体处理终点。
 func TestNonAppendStreamJSONDoesNotEmitMedia(t *testing.T) {
 	sessionCh := make(chan *session.Session, 1)
+	eventCh := make(chan media.Event, 1)
 	_, url, _ := newTestTLSServer(t, func(sess *session.Session) {
 		sessionCh <- sess
+	}, func(callbacks *Callbacks) {
+		callbacks.OnEvent = func(ctx context.Context, clientID string, event media.Event) {
+			eventCh <- event
+		}
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -68,6 +73,9 @@ func TestNonAppendStreamJSONDoesNotEmitMedia(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if got := serviceCount(t, sess); got != 0 {
 		t.Fatalf("service count = %d", got)
+	}
+	if got := waitEvent(t, ctx, eventCh); got.Type != "input_audio_buffer.commit" {
+		t.Fatalf("event type = %q", got.Type)
 	}
 }
 
@@ -96,6 +104,52 @@ func TestInvalidStreamJSONDoesNotBreakSession(t *testing.T) {
 		t.Fatalf("write valid stream: %v", err)
 	}
 	waitForServiceCount(t, ctx, sess, 1)
+}
+
+// TestControlStreamJSONEventsAreReported 验证 stream 控制事件会被 Connector 识别并上报，但不会进入媒体 pipeline。
+func TestControlStreamJSONEventsAreReported(t *testing.T) {
+	sessionCh := make(chan *session.Session, 1)
+	eventCh := make(chan media.Event, 4)
+	_, url, _ := newTestTLSServer(t, func(sess *session.Session) {
+		sessionCh <- sess
+	}, func(callbacks *Callbacks) {
+		callbacks.OnEvent = func(ctx context.Context, clientID string, event media.Event) {
+			eventCh <- event
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-control")
+	defer conn.Close(coderws.StatusNormalClosure, "test done")
+	sess := waitForSession(t, ctx, sessionCh)
+
+	payloads := [][]byte{
+		[]byte(`{"event_id":"commit-1","type":"input_audio_buffer.commit"}`),
+		[]byte(`{"event_id":"create-1","type":"response.create"}`),
+		[]byte(`{"event_id":"cancel-1","type":"response.cancel"}`),
+		[]byte(`{"event_id":"session-1","type":"session.update","session":{"object":"realtime.session","input_audio_format":"g711_alaw","output_audio_format":"g711_alaw"}}`),
+	}
+	wantTypes := []string{
+		"input_audio_buffer.commit",
+		"response.create",
+		"response.cancel",
+		"session.update",
+	}
+	for _, payload := range payloads {
+		if err := conn.Write(ctx, coderws.MessageText, payload); err != nil {
+			t.Fatalf("write stream: %v", err)
+		}
+	}
+	for _, want := range wantTypes {
+		if got := waitEvent(t, ctx, eventCh); got.Type != want {
+			t.Fatalf("event type = %q, want %q", got.Type, want)
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	if got := serviceCount(t, sess); got != 0 {
+		t.Fatalf("service count = %d", got)
+	}
 }
 
 // TestDownlinkPipelineSendsResponseAudioDelta 验证下行 PCM 会发送 response.audio.delta。
@@ -283,11 +337,13 @@ func TestDisconnectCallback(t *testing.T) {
 func streamAppendJSON(t *testing.T, alaw []byte) []byte {
 	t.Helper()
 	payload, err := json.Marshal(struct {
-		Type  string `json:"type"`
-		Audio string `json:"audio"`
+		EventID string `json:"event_id"`
+		Type    string `json:"type"`
+		Audio   string `json:"audio"`
 	}{
-		Type:  "input_audio_buffer.append",
-		Audio: base64.StdEncoding.EncodeToString(alaw),
+		EventID: "append-test",
+		Type:    "input_audio_buffer.append",
+		Audio:   base64.StdEncoding.EncodeToString(alaw),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -325,6 +381,11 @@ func newTestTLSServer(t *testing.T, onSession func(*session.Session), callbackOp
 				sess.OnError(ctx, err)
 			}
 		},
+		OnEvent: func(ctx context.Context, clientID string, event media.Event) {
+			if sess, ok := manager.Get(clientID); ok {
+				sess.OnEvent(ctx, event)
+			}
+		},
 	}
 	for _, opt := range callbackOpts {
 		opt(&callbacks)
@@ -337,6 +398,18 @@ func newTestTLSServer(t *testing.T, onSession func(*session.Session), callbackOp
 	ts := httptest.NewTLSServer(server.httpSrv.Handler)
 	t.Cleanup(ts.Close)
 	return server, "wss" + ts.URL[len("https"):], ts.Client()
+}
+
+// waitEvent 等待 WebSocket connector 上报 stream 事件。
+func waitEvent(t *testing.T, ctx context.Context, eventCh <-chan media.Event) media.Event {
+	t.Helper()
+	select {
+	case event := <-eventCh:
+		return event
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for stream event")
+		return media.Event{}
+	}
 }
 
 // newBareTestTLSServer 创建不带 SessionManager 的 WebSocket 测试服务。

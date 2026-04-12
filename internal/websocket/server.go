@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -15,6 +16,15 @@ import (
 	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/log"
 	"rtc-media-server/internal/media"
+)
+
+const (
+	inputAudioAppendEvent  = "input_audio_buffer.append"
+	inputAudioCommitEvent  = "input_audio_buffer.commit"
+	responseCreateEvent    = "response.create"
+	responseCancelEvent    = "response.cancel"
+	sessionUpdateEvent     = "session.update"
+	responseAudioDeltaType = "response.audio.delta"
 )
 
 // Server 是全局 WebSocket 监听器，负责 WSS 接入并创建每个客户端的 Connector。
@@ -32,6 +42,7 @@ type Server struct {
 type Callbacks struct {
 	OnConnect    func(ctx context.Context, client connector.ClientConnector) error
 	OnDisconnect func(ctx context.Context, clientID string, err error)
+	OnEvent      func(ctx context.Context, clientID string, event media.Event)
 	OnError      func(ctx context.Context, clientID string, err error)
 }
 
@@ -52,6 +63,15 @@ type clientConnector struct {
 type channelConn struct {
 	conn    *coderws.Conn
 	writeMu sync.Mutex
+}
+
+// streamEvent 表示端侧通过 stream 通道发送的完整 JSON 事件。
+type streamEvent struct {
+	EventID string          `json:"event_id"`
+	Type    string          `json:"type"`
+	Audio   string          `json:"audio"`
+	Session json.RawMessage `json:"session"`
+	Raw     []byte          `json:"-"`
 }
 
 // NewServer 创建全局 WebSocket 监听器。
@@ -198,23 +218,97 @@ func (s *Server) readStream(ctx context.Context, client *clientConnector, ch *ch
 	}
 }
 
-// handleStreamPayload 将 WebSocket payload 封装成上行 JSON 媒体帧并交给绑定的 pipeline 输入端。
+// handleStreamPayload 解析 stream JSON 事件，并只把音频字段转成媒体帧交给 pipeline。
 func (s *Server) handleStreamPayload(ctx context.Context, client *clientConnector, payload []byte) {
+	event, err := parseStreamEvent(payload)
+	if err != nil {
+		s.reportError(ctx, client.id, fmt.Errorf("parse stream event: %w", err))
+		return
+	}
+
+	switch event.Type {
+	case inputAudioAppendEvent:
+		s.handleInputAudioAppend(ctx, client, event)
+	case inputAudioCommitEvent:
+		s.handleInputAudioCommit(ctx, client, event)
+	case responseCreateEvent:
+		s.handleResponseCreate(ctx, client, event)
+	case responseCancelEvent:
+		s.handleResponseCancel(ctx, client, event)
+	case sessionUpdateEvent:
+		s.handleSessionUpdate(ctx, client, event)
+	default:
+		s.handleUnknownStreamEvent(ctx, client, event)
+	}
+}
+
+// parseStreamEvent 将 WebSocket payload 解析为 stream JSON 事件。
+func parseStreamEvent(payload []byte) (streamEvent, error) {
+	var event streamEvent
+	if err := json.Unmarshal(payload, &event); err != nil {
+		return event, err
+	}
+	event.Raw = append([]byte(nil), payload...)
+	if strings.TrimSpace(event.Type) == "" {
+		return event, errors.New("stream event type is empty")
+	}
+	return event, nil
+}
+
+// handleInputAudioAppend 处理端侧音频追加事件，并把 audio 字段推入上行 pipeline。
+func (s *Server) handleInputAudioAppend(ctx context.Context, client *clientConnector, event streamEvent) {
+	s.reportEvent(ctx, client.id, event)
+	if event.Audio == "" {
+		log.Warnf("client_id=%s websocket stream append event has empty audio event_id=%s", client.id, event.EventID)
+		return
+	}
 	client.pushUplinkFrame(ctx, media.Frame{
 		SessionID: client.id,
 		Direction: media.DirectionUplink,
 		Timestamp: time.Now(),
-		Payload:   append([]byte(nil), payload...),
+		Payload:   []byte(event.Audio),
 		Format: media.Format{
 			Kind:       media.KindAudio,
-			Codec:      media.CodecJSON,
+			Codec:      media.CodecBase64,
 			SampleRate: s.cfg.Stream.SampleRate,
 			Channels:   s.cfg.Stream.Channels,
 		},
 		Metadata: map[string]string{
-			"source": "websocket_stream",
+			"event_id":   event.EventID,
+			"event_type": event.Type,
+			"source":     "websocket_stream",
 		},
 	})
+}
+
+// handleInputAudioCommit 预留 input_audio_buffer.commit 控制事件处理入口。
+func (s *Server) handleInputAudioCommit(ctx context.Context, client *clientConnector, event streamEvent) {
+	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
+	s.reportEvent(ctx, client.id, event)
+}
+
+// handleResponseCreate 预留 response.create 控制事件处理入口。
+func (s *Server) handleResponseCreate(ctx context.Context, client *clientConnector, event streamEvent) {
+	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
+	s.reportEvent(ctx, client.id, event)
+}
+
+// handleResponseCancel 预留 response.cancel 控制事件处理入口。
+func (s *Server) handleResponseCancel(ctx context.Context, client *clientConnector, event streamEvent) {
+	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
+	s.reportEvent(ctx, client.id, event)
+}
+
+// handleSessionUpdate 预留 session.update 控制事件处理入口。
+func (s *Server) handleSessionUpdate(ctx context.Context, client *clientConnector, event streamEvent) {
+	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
+	s.reportEvent(ctx, client.id, event)
+}
+
+// handleUnknownStreamEvent 处理当前未识别的 stream 事件。
+func (s *Server) handleUnknownStreamEvent(ctx context.Context, client *clientConnector, event streamEvent) {
+	log.Warnf("client_id=%s websocket stream event ignored event_type=%s event_id=%s", client.id, event.Type, event.EventID)
+	s.reportEvent(ctx, client.id, event)
 }
 
 // reserveClient 为指定客户端预留 stream 连接，防止同一客户端重复建联。
@@ -322,16 +416,20 @@ func (client *clientConnector) BindInput(input media.Input) error {
 	return nil
 }
 
-// SendData 把 pipeline 输出的 JSON 帧写回 stream 连接。
+// SendData 把 pipeline 输出的 base64 音频帧打包成 JSON 后写回 stream 连接。
 func (client *clientConnector) SendData(ctx context.Context, frame media.Frame) error {
 	ch := client.streamConn()
 	if ch == nil {
 		return fmt.Errorf("client_id=%s stream channel not connected", client.id)
 	}
-	if frame.Format.Codec != media.CodecJSON {
-		return fmt.Errorf("client_id=%s websocket connector requires json frame, got %s", client.id, frame.Format.Codec)
+	if frame.Format.Codec != media.CodecBase64 {
+		return fmt.Errorf("client_id=%s websocket connector requires base64 frame, got %s", client.id, frame.Format.Codec)
 	}
-	return client.server.write(ctx, ch, coderws.MessageText, frame.Payload)
+	payload, err := packResponseAudioDelta(frame.Payload)
+	if err != nil {
+		return err
+	}
+	return client.server.write(ctx, ch, coderws.MessageText, payload)
 }
 
 // MeasureRTT 通过 stream 连接发送 WebSocket Ping 并返回往返耗时。
@@ -432,6 +530,36 @@ func (s *Server) reportError(ctx context.Context, clientID string, err error) {
 		return
 	}
 	log.Errorf("client_id=%s websocket connector error: %v", clientID, err)
+}
+
+// reportEvent 把 stream 控制事件上报给外部组装层。
+func (s *Server) reportEvent(ctx context.Context, clientID string, event streamEvent) {
+	if s.callbacks.OnEvent == nil {
+		return
+	}
+	fields := map[string]string{
+		"event_id": event.EventID,
+		"audio":    event.Audio,
+	}
+	if len(event.Session) > 0 {
+		fields["session"] = string(event.Session)
+	}
+	s.callbacks.OnEvent(ctx, clientID, media.Event{
+		Type:   event.Type,
+		Raw:    append([]byte(nil), event.Raw...),
+		Fields: fields,
+	})
+}
+
+// packResponseAudioDelta 将 base64 音频 payload 打包成端侧期望的下行 JSON。
+func packResponseAudioDelta(base64Audio []byte) ([]byte, error) {
+	return json.Marshal(struct {
+		Type  string `json:"type"`
+		Delta string `json:"delta"`
+	}{
+		Type:  responseAudioDeltaType,
+		Delta: string(base64Audio),
+	})
 }
 
 // clearDataInput 清理客户端绑定的 pipeline 输入端。
