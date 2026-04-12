@@ -6,15 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/media"
 )
 
 func TestControllerDispatchesDownlinkReference(t *testing.T) {
 	consumer := &referenceConsumer{}
 	ctrl := New(Config{ReferenceQueueSize: 1}, Dependencies{
-		SessionID:        "client-a",
-		ServiceConnector: connector.NewNoopServiceConnector("client-a"),
+		SessionID: "client-a",
 	})
 	defer ctrl.Close(context.Background())
 	ctrl.RegisterReferenceConsumer("aec", consumer)
@@ -67,8 +65,7 @@ func TestControllerSilenceTimeoutClosesSession(t *testing.T) {
 
 func TestControllerDropsReferenceAfterClose(t *testing.T) {
 	ctrl := New(Config{ReferenceQueueSize: 1}, Dependencies{
-		SessionID:        "client-c",
-		ServiceConnector: connector.NewNoopServiceConnector("client-c"),
+		SessionID: "client-c",
 	})
 	if err := ctrl.Close(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)

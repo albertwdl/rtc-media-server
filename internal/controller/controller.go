@@ -12,9 +12,6 @@ import (
 
 const (
 	EventSilenceTimeout = "silence_timeout"
-	EventBargeIn        = "barge_in"
-
-	ReferenceDropNewest = "drop_newest"
 )
 
 // Config 定义 Controller 的跨管线协调参数。
@@ -22,7 +19,6 @@ type Config struct {
 	InitialSilenceTimeout time.Duration
 	SilenceTimeout        time.Duration
 	ReferenceQueueSize    int
-	ReferenceDropPolicy   string
 }
 
 // Dependencies 定义 Controller 操作 Session 和 Connector 所需的外部能力。
@@ -60,9 +56,6 @@ func New(cfg Config, deps Dependencies) *Controller {
 	if cfg.ReferenceQueueSize <= 0 {
 		cfg.ReferenceQueueSize = 16
 	}
-	if cfg.ReferenceDropPolicy != ReferenceDropNewest {
-		cfg.ReferenceDropPolicy = ReferenceDropNewest
-	}
 	if deps.Logger == nil {
 		deps.Logger = slog.Default()
 	}
@@ -95,8 +88,6 @@ func (c *Controller) Emit(ctx context.Context, event media.StageEvent) {
 	switch event.Type {
 	case EventSilenceTimeout:
 		_ = c.CloseSession(ctx, "silence timeout")
-	case EventBargeIn:
-		_ = c.FlushDownlink(ctx, "barge in")
 	}
 }
 
@@ -124,19 +115,6 @@ func (c *Controller) RegisterReferenceConsumer(name string, consumer media.Refer
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.referenceConsumers[name] = consumer
-}
-
-// FlushDownlink 清理下行输出，通常用于打断正在播放的服务侧音频。
-func (c *Controller) FlushDownlink(ctx context.Context, reason string) error {
-	if c.deps.ServiceConnector == nil {
-		return nil
-	}
-	c.deps.Logger.Info(
-		"client_id="+c.deps.SessionID+" controller flush downlink",
-		slog.String("client_id", c.deps.SessionID),
-		slog.String("reason", reason),
-	)
-	return c.deps.ServiceConnector.Flush(ctx, reason)
 }
 
 // CloseSession 触发 Session 标准关闭流程。

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -29,7 +30,6 @@ type Dependencies struct {
 	NewUplinkStages     func(session *Session) ([]media.Stage, error)
 	NewDownlinkStages   func(session *Session) ([]media.Stage, error)
 	NewServiceConnector func(session *Session) (connector.ServiceConnector, error)
-	NewController       func(session *Session, deps controller.Dependencies) (*controller.Controller, error)
 	Logger              *slog.Logger
 	OnSession           func(session *Session)
 	OnCommand           func(session *Session, payload []byte)
@@ -206,10 +206,10 @@ func (s *Session) newPipeline(name string, queueSize int, stages []media.Stage, 
 }
 
 func (m *Manager) serviceConnectorFor(s *Session) (connector.ServiceConnector, error) {
-	if m.deps.NewServiceConnector != nil {
-		return m.deps.NewServiceConnector(s)
+	if m.deps.NewServiceConnector == nil {
+		return nil, errors.New("session NewServiceConnector is required")
 	}
-	return connector.NewNoopServiceConnector(s.id), nil
+	return m.deps.NewServiceConnector(s)
 }
 
 func (m *Manager) controllerFor(s *Session) (*controller.Controller, error) {
@@ -221,9 +221,6 @@ func (m *Manager) controllerFor(s *Session) (*controller.Controller, error) {
 		CloseSession: func(ctx context.Context, reason string) error {
 			return s.Close(ctx, reason)
 		},
-	}
-	if m.deps.NewController != nil {
-		return m.deps.NewController(s, deps)
 	}
 	return controller.New(m.cfg.Controller, deps), nil
 }

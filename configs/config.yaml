@@ -23,7 +23,6 @@ controller:
   initial_silence_timeout: "15s"
   silence_timeout: "5s"
   reference_queue_size: 16
-  reference_drop_policy: "drop_newest"
 
 pipeline:
   uplink_queue_size: 32

@@ -345,6 +345,9 @@ func newTestTLSServer(t *testing.T, deps session.Dependencies) (*Server, string,
 			}, nil
 		}
 	}
+	if deps.NewServiceConnector == nil {
+		deps.NewServiceConnector = newCapturingServiceConnector(make(chan media.Frame, 1))
+	}
 
 	manager := session.NewManager(session.Config{
 		UplinkQueueSize:   8,
@@ -388,8 +391,6 @@ func (c *capturingServiceConnector) Consume(ctx context.Context, frame media.Fra
 	c.frameCh <- frame
 	return nil
 }
-
-func (c *capturingServiceConnector) Flush(ctx context.Context, reason string) error { return nil }
 
 func (c *capturingServiceConnector) Close(ctx context.Context, reason string) error {
 	c.once.Do(func() { close(c.done) })

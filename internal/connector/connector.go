@@ -2,8 +2,6 @@ package connector
 
 import (
 	"context"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"rtc-media-server/internal/media"
@@ -41,43 +39,6 @@ type ServiceConnector interface {
 	media.Sink
 
 	Start(ctx context.Context, downlink media.Sink) error
-	Flush(ctx context.Context, reason string) error
 	Close(ctx context.Context, reason string) error
 	Done() <-chan struct{}
 }
-
-// NoopServiceConnector 是默认空服务连接器，用于未接入业务服务时保持管线可运行。
-type NoopServiceConnector struct {
-	id    string
-	done  chan struct{}
-	once  sync.Once
-	count atomic.Uint64
-}
-
-func NewNoopServiceConnector(id string) *NoopServiceConnector {
-	return &NoopServiceConnector{id: id, done: make(chan struct{})}
-}
-
-func (c *NoopServiceConnector) ID() string { return c.id }
-
-func (c *NoopServiceConnector) Protocol() string { return "noop_service" }
-
-func (c *NoopServiceConnector) Start(ctx context.Context, downlink media.Sink) error { return nil }
-
-func (c *NoopServiceConnector) Consume(ctx context.Context, frame media.Frame) error {
-	c.count.Add(1)
-	return nil
-}
-
-func (c *NoopServiceConnector) Flush(ctx context.Context, reason string) error { return nil }
-
-func (c *NoopServiceConnector) Close(ctx context.Context, reason string) error {
-	c.once.Do(func() {
-		close(c.done)
-	})
-	return nil
-}
-
-func (c *NoopServiceConnector) Done() <-chan struct{} { return c.done }
-
-func (c *NoopServiceConnector) Count() uint64 { return c.count.Load() }

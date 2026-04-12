@@ -67,15 +67,6 @@ func (c *MockConnector) PushDownlink(ctx context.Context, frame media.Frame) err
 	return downlink.Consume(ctx, frame)
 }
 
-func (c *MockConnector) Flush(ctx context.Context, reason string) error {
-	c.logger.Info(
-		"client_id="+c.id+" service connector flushed",
-		slog.String("client_id", c.id),
-		slog.String("reason", reason),
-	)
-	return nil
-}
-
 func (c *MockConnector) Close(ctx context.Context, reason string) error {
 	c.once.Do(func() {
 		close(c.done)
