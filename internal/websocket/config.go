@@ -87,6 +87,7 @@ func LoadConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
+// defaultConfigPath 查找默认配置文件路径。
 func defaultConfigPath() (string, error) {
 	for _, path := range []string{
 		filepath.Join("configs", "config.yaml"),
@@ -99,6 +100,7 @@ func defaultConfigPath() (string, error) {
 	return "", errors.New("websocket config not found: tried configs/config.yaml and configs/config.yml")
 }
 
+// validateConfig 校验 WebSocket 运行配置的必填项和取值范围。
 func validateConfig(cfg Config) error {
 	if cfg.Port <= 0 || cfg.Port > 65535 {
 		return fmt.Errorf("invalid websocket port %d", cfg.Port)
@@ -136,6 +138,7 @@ func validateConfig(cfg Config) error {
 	return nil
 }
 
+// validateTLSFiles 校验证书和私钥文件是否可访问。
 func validateTLSFiles(cfg Config) error {
 	if _, err := os.Stat(cfg.TLS.CertFile); err != nil {
 		return fmt.Errorf("stat websocket tls cert_file %q: %w", cfg.TLS.CertFile, err)
@@ -146,10 +149,12 @@ func validateTLSFiles(cfg Config) error {
 	return nil
 }
 
+// rootConfig 映射配置文件根节点。
 type rootConfig struct {
 	WebSocket rawConfig `yaml:"websocket"`
 }
 
+// rawConfig 映射 YAML 中 websocket 节点的原始字段。
 type rawConfig struct {
 	Listen          string          `yaml:"listen"`
 	Port            int             `yaml:"port"`
@@ -163,16 +168,19 @@ type rawConfig struct {
 	Stream          rawStreamConfig `yaml:"stream"`
 }
 
+// rawTLSConfig 映射 YAML 中 websocket.tls 节点。
 type rawTLSConfig struct {
 	CertFile string `yaml:"cert_file"`
 	KeyFile  string `yaml:"key_file"`
 }
 
+// rawStreamConfig 映射 YAML 中 websocket.stream 节点。
 type rawStreamConfig struct {
 	SampleRate int `yaml:"sample_rate"`
 	Channels   int `yaml:"channels"`
 }
 
+// defaultRawConfig 返回带默认值的原始配置，便于 YAML 局部覆盖。
 func defaultRawConfig() rawConfig {
 	cfg := DefaultConfig()
 	return rawConfig{
@@ -191,6 +199,7 @@ func defaultRawConfig() rawConfig {
 	}
 }
 
+// config 将原始 YAML 配置转换为运行时 Config。
 func (raw rawConfig) config() (Config, error) {
 	rttInterval, err := parseDuration("rtt_interval", raw.RTTInterval)
 	if err != nil {
@@ -226,6 +235,7 @@ func (raw rawConfig) config() (Config, error) {
 	return cfg, nil
 }
 
+// parseDuration 解析配置中的 duration 字符串。
 func parseDuration(name, value string) (time.Duration, error) {
 	d, err := time.ParseDuration(value)
 	if err != nil {

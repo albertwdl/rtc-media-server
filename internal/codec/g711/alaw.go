@@ -27,6 +27,7 @@ func EncodePCMToALaw(pcm []byte) []byte {
 	return alaw
 }
 
+// alawToLinear 按 G.711 A-law 标准把单个 8-bit 样本展开为线性 PCM。
 func alawToLinear(aVal byte) int16 {
 	aVal ^= 0x55
 	t := int16(aVal&0x0F) << 4
@@ -46,6 +47,7 @@ func alawToLinear(aVal byte) int16 {
 	return t
 }
 
+// linearToALaw 按 G.711 A-law 标准把单个 PCM 样本压缩为 8-bit A-law。
 func linearToALaw(sample int16) byte {
 	pcm := int(sample)
 	mask := byte(0xD5)
@@ -68,6 +70,7 @@ func linearToALaw(sample int16) byte {
 	return aval ^ mask
 }
 
+// searchSegment 查找 A-law 编码时使用的压缩段。
 func searchSegment(pcm int) int {
 	for seg, end := range [...]int{0x1F, 0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF, 0x7FF, 0xFFF} {
 		if pcm <= end {

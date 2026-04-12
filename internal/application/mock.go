@@ -30,8 +30,10 @@ func NewMockConnector(id string, logger *slog.Logger) *MockConnector {
 	return &MockConnector{id: id, logger: logger, done: make(chan struct{})}
 }
 
+// ID 返回 mock 服务连接器绑定的 Session ID。
 func (c *MockConnector) ID() string { return c.id }
 
+// Protocol 返回 mock 服务连接器协议名称。
 func (c *MockConnector) Protocol() string { return "mock_service" }
 
 // Start 绑定服务侧下行输出目标。
@@ -67,6 +69,7 @@ func (c *MockConnector) PushDownlink(ctx context.Context, frame media.Frame) err
 	return downlink.Consume(ctx, frame)
 }
 
+// Close 关闭 mock 服务连接器。
 func (c *MockConnector) Close(ctx context.Context, reason string) error {
 	c.once.Do(func() {
 		close(c.done)
@@ -74,6 +77,8 @@ func (c *MockConnector) Close(ctx context.Context, reason string) error {
 	return nil
 }
 
+// Done 返回 mock 服务连接器关闭通知。
 func (c *MockConnector) Done() <-chan struct{} { return c.done }
 
+// Count 返回 mock 服务连接器已消费的上行帧数量。
 func (c *MockConnector) Count() uint64 { return c.count.Load() }

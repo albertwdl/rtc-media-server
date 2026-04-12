@@ -194,6 +194,7 @@ func (m *Manager) Attach(ctx context.Context, client connector.ClientConnector) 
 	return s, true, nil
 }
 
+// newPipeline 创建带 Session 错误回调的队列 pipeline。
 func (s *Session) newPipeline(name string, queueSize int, stages []media.Stage, sink media.Sink) media.Pipeline {
 	p := pipeline.NewQueuePipeline(name, queueSize, stages, sink, s.logger)
 	p.SetErrorHandler(func(ctx context.Context, frame media.Frame, err error) {
@@ -202,6 +203,7 @@ func (s *Session) newPipeline(name string, queueSize int, stages []media.Stage, 
 	return p
 }
 
+// serviceConnectorFor 为 Session 创建必需的服务侧 Connector。
 func (m *Manager) serviceConnectorFor(s *Session) (connector.ServiceConnector, error) {
 	if m.deps.NewServiceConnector == nil {
 		return nil, errors.New("session NewServiceConnector is required")
@@ -209,6 +211,7 @@ func (m *Manager) serviceConnectorFor(s *Session) (connector.ServiceConnector, e
 	return m.deps.NewServiceConnector(s)
 }
 
+// controllerFor 为 Session 创建独立 Controller。
 func (m *Manager) controllerFor(s *Session) (*controller.Controller, error) {
 	deps := controller.Dependencies{
 		SessionID:        s.id,
@@ -222,6 +225,7 @@ func (m *Manager) controllerFor(s *Session) (*controller.Controller, error) {
 	return controller.New(m.cfg.Controller, deps), nil
 }
 
+// uplinkStagesFor 为 Session 创建独立的上行 stage chain。
 func (m *Manager) uplinkStagesFor(s *Session) ([]media.Stage, error) {
 	if m.deps.NewUplinkStages != nil {
 		return m.deps.NewUplinkStages(s)
@@ -229,6 +233,7 @@ func (m *Manager) uplinkStagesFor(s *Session) ([]media.Stage, error) {
 	return append([]media.Stage(nil), m.deps.UplinkStages...), nil
 }
 
+// downlinkStagesFor 为 Session 创建独立的下行 stage chain。
 func (m *Manager) downlinkStagesFor(s *Session) ([]media.Stage, error) {
 	if m.deps.NewDownlinkStages != nil {
 		return m.deps.NewDownlinkStages(s)
@@ -267,6 +272,7 @@ func (m *Manager) Close(ctx context.Context) error {
 	return nil
 }
 
+// Get 按 Session ID 查询当前在线 Session。
 func (m *Manager) Get(id string) (*Session, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -274,24 +280,34 @@ func (m *Manager) Get(id string) (*Session, bool) {
 	return s, s != nil
 }
 
+// ID 返回 Session 的客户端标识。
 func (s *Session) ID() string { return s.id }
 
+// Context 返回 Session 生命周期上下文。
 func (s *Session) Context() context.Context { return s.ctx }
 
+// Done 返回 Session 关闭通知。
 func (s *Session) Done() <-chan struct{} { return s.done }
 
+// Logger 返回带 Session 字段的日志器。
 func (s *Session) Logger() *slog.Logger { return s.logger }
 
+// ClientConnector 返回 Session 持有的客户端 Connector。
 func (s *Session) ClientConnector() connector.ClientConnector { return s.clientConnector }
 
+// ServiceConnector 返回 Session 持有的服务侧 Connector。
 func (s *Session) ServiceConnector() connector.ServiceConnector { return s.serviceConnector }
 
+// Controller 返回 Session 持有的跨管线 Controller。
 func (s *Session) Controller() *controller.Controller { return s.controller }
 
+// Uplink 返回 Session 的上行 pipeline。
 func (s *Session) Uplink() media.Pipeline { return s.uplink }
 
+// Downlink 返回 Session 的下行 pipeline。
 func (s *Session) Downlink() media.Pipeline { return s.downlink }
 
+// Err 返回 Session 关闭或移除时记录的错误。
 func (s *Session) Err() error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -308,6 +324,7 @@ func (s *Session) EnqueueDownlink(ctx context.Context, frame media.Frame) error 
 	return s.downlink.Push(ctx, frame)
 }
 
+// MeasureRTT 通过客户端 Connector 主动测量 RTT 并缓存结果。
 func (s *Session) MeasureRTT(ctx context.Context) (time.Duration, error) {
 	rtt, err := s.clientConnector.MeasureRTT(ctx)
 	if err != nil {
@@ -320,12 +337,14 @@ func (s *Session) MeasureRTT(ctx context.Context) (time.Duration, error) {
 	return rtt, nil
 }
 
+// RTT 返回最近一次成功测量的 RTT。
 func (s *Session) RTT() (time.Duration, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.rtt, s.ok
 }
 
+// Close 按固定顺序关闭 Controller、pipeline 和 Connector。
 func (s *Session) Close(ctx context.Context, reason string) error {
 	var closeErr error
 	s.once.Do(func() {
@@ -347,6 +366,7 @@ func (s *Session) Close(ctx context.Context, reason string) error {
 	return closeErr
 }
 
+// OnMedia 接收客户端 Connector 上报的媒体帧并投递到上行 pipeline。
 func (s *Session) OnMedia(ctx context.Context, frame media.Frame) {
 	frame.SessionID = s.id
 	frame.Direction = media.DirectionUplink
@@ -358,6 +378,7 @@ func (s *Session) OnMedia(ctx context.Context, frame media.Frame) {
 	}
 }
 
+// OnEvent 接收 Connector 或协议适配 stage 上报的非媒体事件。
 func (s *Session) OnEvent(ctx context.Context, event connector.Event) {
 	s.logger.Info("client_id="+s.id+" connector event", slog.String("event_type", event.Type), slog.Int("bytes", len(event.Raw)))
 	if s.onEvent != nil {
@@ -365,6 +386,7 @@ func (s *Session) OnEvent(ctx context.Context, event connector.Event) {
 	}
 }
 
+// OnError 记录并转发 Session 范围内的错误。
 func (s *Session) OnError(ctx context.Context, err error) {
 	s.logger.Error("client_id="+s.id+" session error", slog.Any("error", err))
 	if s.onError != nil {
@@ -372,6 +394,7 @@ func (s *Session) OnError(ctx context.Context, err error) {
 	}
 }
 
+// setErr 记录 Session 的最终错误状态。
 func (s *Session) setErr(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

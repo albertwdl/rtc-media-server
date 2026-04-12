@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// TestLoadConfig 验证 YAML 配置能加载为运行时 WebSocket 配置。
 func TestLoadConfig(t *testing.T) {
 	dir := t.TempDir()
 	cert := filepath.Join(dir, "server.crt")

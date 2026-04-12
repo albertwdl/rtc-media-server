@@ -48,6 +48,7 @@ func (s *MockStage) SetEventEmitter(emit func(ctx context.Context, event media.S
 	s.emit = emit
 }
 
+// Name 返回 VAD mock stage 名称。
 func (s *MockStage) Name() string { return "vad_mock" }
 
 // Process 接收上行增强后的 PCM 帧，记录 VAD mock 日志并透传。
@@ -82,10 +83,12 @@ func (s *MockStage) EmitSilenceTimeout(ctx context.Context, frame media.Frame) {
 	})
 }
 
+// Close 关闭 VAD mock stage。
 func (s *MockStage) Close(ctx context.Context) error {
 	return nil
 }
 
+// Count 返回 VAD mock stage 已处理的帧数量。
 func (s *MockStage) Count() uint64 {
 	return s.count.Load()
 }

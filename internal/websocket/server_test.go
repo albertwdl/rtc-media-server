@@ -29,6 +29,7 @@ import (
 	"rtc-media-server/internal/session"
 )
 
+// TestStreamAppendJSONEntersSessionUplink 验证 stream append JSON 会进入 Session 上行 pipeline。
 func TestStreamAppendJSONEntersSessionUplink(t *testing.T) {
 	frameCh := make(chan media.Frame, 1)
 	_, url, _ := newTestTLSServer(t, session.Dependencies{
@@ -64,6 +65,7 @@ func TestStreamAppendJSONEntersSessionUplink(t *testing.T) {
 	}
 }
 
+// TestNonAppendStreamJSONDoesNotEmitMedia 验证非 append 事件只上报事件不输出媒体帧。
 func TestNonAppendStreamJSONDoesNotEmitMedia(t *testing.T) {
 	frameCh := make(chan media.Frame, 1)
 	eventCh := make(chan string, 1)
@@ -97,6 +99,7 @@ func TestNonAppendStreamJSONDoesNotEmitMedia(t *testing.T) {
 	}
 }
 
+// TestInvalidStreamJSONReportsError 验证非法 stream JSON 会触发错误回调。
 func TestInvalidStreamJSONReportsError(t *testing.T) {
 	errCh := make(chan error, 1)
 	_, url, _ := newTestTLSServer(t, session.Dependencies{
@@ -123,6 +126,7 @@ func TestInvalidStreamJSONReportsError(t *testing.T) {
 	}
 }
 
+// TestDownlinkPipelineSendsResponseAudioDelta 验证下行 PCM 会发送 response.audio.delta。
 func TestDownlinkPipelineSendsResponseAudioDelta(t *testing.T) {
 	sessionCh := make(chan *session.Session, 1)
 	_, url, _ := newTestTLSServer(t, session.Dependencies{
@@ -171,6 +175,7 @@ func TestDownlinkPipelineSendsResponseAudioDelta(t *testing.T) {
 	}
 }
 
+// TestMissingClientIDRejected 验证缺少客户端 ID Header 时拒绝建联。
 func TestMissingClientIDRejected(t *testing.T) {
 	_, url, client := newTestTLSServer(t, session.Dependencies{})
 
@@ -187,6 +192,7 @@ func TestMissingClientIDRejected(t *testing.T) {
 	}
 }
 
+// TestDuplicateChannelRejected 验证同一客户端重复 stream 建联会被拒绝。
 func TestDuplicateChannelRejected(t *testing.T) {
 	_, url, client := newTestTLSServer(t, session.Dependencies{})
 
@@ -209,6 +215,7 @@ func TestDuplicateChannelRejected(t *testing.T) {
 	}
 }
 
+// TestRTTUsesStreamChannel 验证 RTT 通过 stream channel 测量并缓存。
 func TestRTTUsesStreamChannel(t *testing.T) {
 	sessionCh := make(chan *session.Session, 1)
 	_, url, _ := newTestTLSServer(t, session.Dependencies{
@@ -252,6 +259,7 @@ func TestRTTUsesStreamChannel(t *testing.T) {
 	}
 }
 
+// streamAppendJSON 构造端侧上行 append 事件 JSON。
 func streamAppendJSON(t *testing.T, alaw []byte) []byte {
 	t.Helper()
 	payload, err := json.Marshal(struct {
@@ -267,6 +275,7 @@ func streamAppendJSON(t *testing.T, alaw []byte) []byte {
 	return payload
 }
 
+// newTestTLSServer 创建使用自签证书的 WebSocket 测试服务。
 func newTestTLSServer(t *testing.T, deps session.Dependencies) (*Server, string, *http.Client) {
 	t.Helper()
 
@@ -315,6 +324,7 @@ func newTestTLSServer(t *testing.T, deps session.Dependencies) (*Server, string,
 	return server, "wss" + ts.URL[len("https"):], ts.Client()
 }
 
+// newCapturingServiceConnector 创建捕获上行帧的服务侧 Connector 工厂。
 func newCapturingServiceConnector(frameCh chan<- media.Frame) func(*session.Session) (connector.ServiceConnector, error) {
 	return func(sess *session.Session) (connector.ServiceConnector, error) {
 		return &capturingServiceConnector{
@@ -325,6 +335,7 @@ func newCapturingServiceConnector(frameCh chan<- media.Frame) func(*session.Sess
 	}
 }
 
+// capturingServiceConnector 是测试用服务侧 Connector。
 type capturingServiceConnector struct {
 	id      string
 	frameCh chan<- media.Frame
@@ -332,24 +343,31 @@ type capturingServiceConnector struct {
 	once    sync.Once
 }
 
+// ID 返回测试服务侧 Connector ID。
 func (c *capturingServiceConnector) ID() string { return c.id }
 
+// Protocol 返回测试服务侧 Connector 协议名称。
 func (c *capturingServiceConnector) Protocol() string { return "capturing_service" }
 
+// Start 绑定测试服务侧 Connector 的下行 sink。
 func (c *capturingServiceConnector) Start(ctx context.Context, downlink media.Sink) error { return nil }
 
+// Consume 捕获上行 pipeline 输出的媒体帧。
 func (c *capturingServiceConnector) Consume(ctx context.Context, frame media.Frame) error {
 	c.frameCh <- frame
 	return nil
 }
 
+// Close 关闭测试服务侧 Connector。
 func (c *capturingServiceConnector) Close(ctx context.Context, reason string) error {
 	c.once.Do(func() { close(c.done) })
 	return nil
 }
 
+// Done 返回测试服务侧 Connector 关闭通知。
 func (c *capturingServiceConnector) Done() <-chan struct{} { return c.done }
 
+// dialTestWS 建立带客户端 ID Header 的测试 WebSocket 连接。
 func dialTestWS(t *testing.T, ctx context.Context, url string, clientID string) *coderws.Conn {
 	t.Helper()
 
@@ -369,6 +387,7 @@ func dialTestWS(t *testing.T, ctx context.Context, url string, clientID string) 
 	return conn
 }
 
+// writeSelfSignedCert 写入测试用自签 TLS 证书。
 func writeSelfSignedCert(t *testing.T, dir string) (string, string) {
 	t.Helper()
 

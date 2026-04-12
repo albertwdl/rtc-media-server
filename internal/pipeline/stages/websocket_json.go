@@ -29,8 +29,10 @@ func NewWebSocketJSONUnpack(onEvent EventHandler) *WebSocketJSONUnpackStage {
 	return &WebSocketJSONUnpackStage{onEvent: onEvent}
 }
 
+// Name 返回 WebSocket JSON 解包 stage 名称。
 func (s *WebSocketJSONUnpackStage) Name() string { return "websocket_json_unpack" }
 
+// Process 解析 stream JSON，提取 append 事件中的 base64 音频字段。
 func (s *WebSocketJSONUnpackStage) Process(ctx context.Context, frame media.Frame) (media.Frame, error) {
 	if frame.Format.Codec != "" && frame.Format.Codec != media.CodecJSON {
 		return frame, fmt.Errorf("websocket json unpack requires %s, got %s", media.CodecJSON, frame.Format.Codec)
@@ -73,6 +75,7 @@ func (s *WebSocketJSONUnpackStage) Process(ctx context.Context, frame media.Fram
 	return frame, nil
 }
 
+// Close 关闭 WebSocket JSON 解包 stage。
 func (s *WebSocketJSONUnpackStage) Close(ctx context.Context) error { return nil }
 
 // WebSocketJSONPackStage 将 base64 音频 payload 打包成端侧期望的 response.audio.delta JSON。
@@ -83,8 +86,10 @@ func NewWebSocketJSONPack() *WebSocketJSONPackStage {
 	return &WebSocketJSONPackStage{}
 }
 
+// Name 返回 WebSocket JSON 打包 stage 名称。
 func (s *WebSocketJSONPackStage) Name() string { return "websocket_json_pack" }
 
+// Process 将 base64 音频 payload 打包为 response.audio.delta JSON。
 func (s *WebSocketJSONPackStage) Process(ctx context.Context, frame media.Frame) (media.Frame, error) {
 	if frame.Format.Codec != media.CodecBase64 {
 		return frame, fmt.Errorf("websocket json pack requires %s, got %s", media.CodecBase64, frame.Format.Codec)
@@ -112,4 +117,5 @@ func (s *WebSocketJSONPackStage) Process(ctx context.Context, frame media.Frame)
 	return frame, nil
 }
 
+// Close 关闭 WebSocket JSON 打包 stage。
 func (s *WebSocketJSONPackStage) Close(ctx context.Context) error { return nil }

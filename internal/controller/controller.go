@@ -130,6 +130,7 @@ func (c *Controller) CloseSession(ctx context.Context, reason string) error {
 	return c.deps.CloseSession(ctx, reason)
 }
 
+// Close 停止 Controller 的后台参考信号分发循环。
 func (c *Controller) Close(ctx context.Context) error {
 	c.once.Do(func() {
 		c.cancel()
@@ -138,16 +139,20 @@ func (c *Controller) Close(ctx context.Context) error {
 	return nil
 }
 
+// Done 返回 Controller 关闭通知。
 func (c *Controller) Done() <-chan struct{} { return c.done }
 
+// InitialSilenceTimeout 返回连接建立后的首次静音等待时长。
 func (c *Controller) InitialSilenceTimeout() time.Duration {
 	return c.cfg.InitialSilenceTimeout
 }
 
+// SilenceTimeout 返回首次有效语音后的静音超时时长。
 func (c *Controller) SilenceTimeout() time.Duration {
 	return c.cfg.SilenceTimeout
 }
 
+// run 异步分发下行参考信号，避免阻塞下行 pipeline。
 func (c *Controller) run() {
 	for {
 		select {
@@ -159,6 +164,7 @@ func (c *Controller) run() {
 	}
 }
 
+// dispatchReference 把参考帧发送给当前 Session 注册的所有 reference consumer。
 func (c *Controller) dispatchReference(ctx context.Context, frame media.Frame) {
 	c.mu.RLock()
 	consumers := make(map[string]media.ReferenceConsumer, len(c.referenceConsumers))
@@ -178,6 +184,7 @@ func (c *Controller) dispatchReference(ctx context.Context, frame media.Frame) {
 	}
 }
 
+// cloneFrame 深拷贝媒体帧中会被异步访问的可变字段。
 func cloneFrame(frame media.Frame) media.Frame {
 	frame.Payload = append([]byte(nil), frame.Payload...)
 	if frame.Metadata != nil {

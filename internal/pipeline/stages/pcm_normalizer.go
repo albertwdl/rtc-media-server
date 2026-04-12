@@ -23,8 +23,10 @@ func NewPCM16Normalizer(target media.Format) *PCM16Normalizer {
 	return &PCM16Normalizer{target: target}
 }
 
+// Name 返回 PCM 归一化 stage 名称。
 func (n *PCM16Normalizer) Name() string { return "pcm_normalize" }
 
+// Process 将 PCM16LE payload 归一化到目标采样率和声道数。
 func (n *PCM16Normalizer) Process(ctx context.Context, frame media.Frame) (media.Frame, error) {
 	if frame.Format.Codec == "" {
 		frame.Format.Codec = media.CodecPCM16LE
@@ -53,8 +55,10 @@ func (n *PCM16Normalizer) Process(ctx context.Context, frame media.Frame) (media
 	return frame, nil
 }
 
+// Close 关闭 PCM 归一化 stage。
 func (n *PCM16Normalizer) Close(ctx context.Context) error { return nil }
 
+// bytesToSamples 将 little-endian PCM16 字节转换为采样数组。
 func bytesToSamples(payload []byte) []int16 {
 	samples := make([]int16, len(payload)/2)
 	for i := range samples {
@@ -63,6 +67,7 @@ func bytesToSamples(payload []byte) []int16 {
 	return samples
 }
 
+// samplesToBytes 将 PCM16 采样数组转换为 little-endian 字节。
 func samplesToBytes(samples []int16) []byte {
 	payload := make([]byte, len(samples)*2)
 	for i, sample := range samples {
@@ -71,6 +76,7 @@ func samplesToBytes(samples []int16) []byte {
 	return payload
 }
 
+// downmixToMono 将多声道 PCM 采样按平均值混合为单声道。
 func downmixToMono(samples []int16, channels int) []int16 {
 	if channels == 1 {
 		return samples
@@ -87,6 +93,7 @@ func downmixToMono(samples []int16, channels int) []int16 {
 	return mono
 }
 
+// resampleNearest 使用最近邻算法重采样 PCM 数据。
 func resampleNearest(samples []int16, fromRate, toRate int) []int16 {
 	if fromRate == toRate {
 		return samples

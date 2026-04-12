@@ -15,12 +15,15 @@ type ReferenceTapStage struct {
 	handler ReferenceHandler
 }
 
+// NewReferenceTap 创建下行参考信号 tap stage。
 func NewReferenceTap(handler ReferenceHandler) *ReferenceTapStage {
 	return &ReferenceTapStage{handler: handler}
 }
 
+// Name 返回参考信号 tap stage 名称。
 func (s *ReferenceTapStage) Name() string { return "reference_tap" }
 
+// Process 复制 PCM16LE 下行帧并交给参考信号处理器。
 func (s *ReferenceTapStage) Process(ctx context.Context, frame media.Frame) (media.Frame, error) {
 	if frame.Format.Codec != media.CodecPCM16LE {
 		return frame, fmt.Errorf("reference tap requires %s, got %s", media.CodecPCM16LE, frame.Format.Codec)
@@ -39,4 +42,5 @@ func (s *ReferenceTapStage) Process(ctx context.Context, frame media.Frame) (med
 	return frame, nil
 }
 
+// Close 关闭参考信号 tap stage。
 func (s *ReferenceTapStage) Close(ctx context.Context) error { return nil }

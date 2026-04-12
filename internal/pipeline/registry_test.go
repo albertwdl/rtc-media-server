@@ -7,6 +7,7 @@ import (
 	"rtc-media-server/internal/media"
 )
 
+// TestRegistryBuildKeepsOrderAndSkipsDisabled 验证 registry 按配置顺序构建并跳过禁用 stage。
 func TestRegistryBuildKeepsOrderAndSkipsDisabled(t *testing.T) {
 	registry := NewRegistry()
 	registry.Register("first", testStageFactory("first"))
@@ -29,6 +30,7 @@ func TestRegistryBuildKeepsOrderAndSkipsDisabled(t *testing.T) {
 	}
 }
 
+// TestRegistryBuildUnknownStage 验证未知 stage 会返回错误。
 func TestRegistryBuildUnknownStage(t *testing.T) {
 	registry := NewRegistry()
 	if _, err := registry.Build([]StageConfig{{Name: "missing"}}, Dependencies{}); err == nil {
@@ -36,6 +38,7 @@ func TestRegistryBuildUnknownStage(t *testing.T) {
 	}
 }
 
+// testStageFactory 创建只返回固定名称 stage 的测试工厂。
 func testStageFactory(name string) StageFactory {
 	return func(cfg StageConfig, deps Dependencies) (media.Stage, error) {
 		return media.NewStageFunc(name, func(ctx context.Context, frame media.Frame) (media.Frame, error) {

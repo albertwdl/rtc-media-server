@@ -8,6 +8,7 @@ import (
 	"rtc-media-server/internal/media"
 )
 
+// TestPCM16NormalizerDownmixesAndResamples 验证 PCM normalizer 会混单声道并重采样。
 func TestPCM16NormalizerDownmixesAndResamples(t *testing.T) {
 	payload := make([]byte, 8*2)
 	for i, sample := range []int16{100, 300, 200, 400, 300, 500, 400, 600} {

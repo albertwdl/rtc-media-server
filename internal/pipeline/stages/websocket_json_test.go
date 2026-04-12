@@ -12,6 +12,7 @@ import (
 	"rtc-media-server/internal/pipeline"
 )
 
+// TestWebSocketJSONUnpackAppend 验证 append 事件会被解包为 base64 音频帧。
 func TestWebSocketJSONUnpackAppend(t *testing.T) {
 	eventCh := make(chan connector.Event, 1)
 	stage := NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event connector.Event) {
@@ -39,6 +40,7 @@ func TestWebSocketJSONUnpackAppend(t *testing.T) {
 	}
 }
 
+// TestWebSocketJSONUnpackNonAppendDropsFrame 验证非 append 事件会被丢弃。
 func TestWebSocketJSONUnpackNonAppendDropsFrame(t *testing.T) {
 	stage := NewWebSocketJSONUnpack(nil)
 	_, err := stage.Process(context.Background(), media.Frame{
@@ -50,6 +52,7 @@ func TestWebSocketJSONUnpackNonAppendDropsFrame(t *testing.T) {
 	}
 }
 
+// TestWebSocketJSONPack 验证 base64 音频帧会被打包为下行 JSON。
 func TestWebSocketJSONPack(t *testing.T) {
 	frame, err := NewWebSocketJSONPack().Process(context.Background(), media.Frame{
 		Payload: []byte("1VU="),

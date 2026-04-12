@@ -7,6 +7,7 @@ import (
 	"rtc-media-server/internal/media"
 )
 
+// TestReferenceTapCopiesPCMFrame 验证 reference tap 会复制 PCM 参考帧。
 func TestReferenceTapCopiesPCMFrame(t *testing.T) {
 	refCh := make(chan media.Frame, 1)
 	stage := NewReferenceTap(func(ctx context.Context, frame media.Frame) {

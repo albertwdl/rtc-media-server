@@ -8,6 +8,7 @@ import (
 	"rtc-media-server/internal/media"
 )
 
+// TestALawDecodeProducesPCM16 验证 A-law 解码 stage 输出 PCM16。
 func TestALawDecodeProducesPCM16(t *testing.T) {
 	frame, err := NewALawDecode(media.DefaultPCM16Format()).Process(context.Background(), media.Frame{
 		Payload: []byte{0xD5, 0x55},
@@ -29,6 +30,7 @@ func TestALawDecodeProducesPCM16(t *testing.T) {
 	}
 }
 
+// TestALawEncodeDropsTrailingOddByte 验证 A-law 编码 stage 忽略奇数字节尾部。
 func TestALawEncodeDropsTrailingOddByte(t *testing.T) {
 	frame, err := NewALawEncode().Process(context.Background(), media.Frame{
 		Payload: []byte{0x01, 0x02, 0x03},

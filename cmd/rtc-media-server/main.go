@@ -30,6 +30,7 @@ import (
 
 const configPath = "configs/config.yaml"
 
+// main 组装 demo 运行所需的配置、SessionManager 和 WebSocket 服务。
 func main() {
 	logger := slog.Default()
 
@@ -107,6 +108,7 @@ func main() {
 	logger.Info("rtc-media-server demo 已停止")
 }
 
+// ensureDemoCertificate 确保本地 demo WSS 证书存在，不存在时生成自签证书。
 func ensureDemoCertificate(certFile, keyFile string) error {
 	certExists := fileExists(certFile)
 	keyExists := fileExists(keyFile)
@@ -164,11 +166,13 @@ func ensureDemoCertificate(certFile, keyFile string) error {
 	return nil
 }
 
+// fileExists 判断指定路径是否存在。
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
 
+// fatal 记录致命错误并退出进程。
 func fatal(logger *slog.Logger, msg string, err error) {
 	logger.Error(msg, slog.Any("error", err))
 	os.Exit(1)

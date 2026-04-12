@@ -29,6 +29,7 @@ type Server struct {
 	stop    context.CancelFunc
 }
 
+// clientConnector 表示某个客户端在 WebSocket 协议下的一组 channel 连接。
 type clientConnector struct {
 	id     string
 	server *Server
@@ -41,6 +42,7 @@ type clientConnector struct {
 	closeOnce     sync.Once
 }
 
+// channelConn 封装单个 WebSocket channel 及其写锁。
 type channelConn struct {
 	conn    *coderws.Conn
 	writeMu sync.Mutex
@@ -136,6 +138,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpSrv.Shutdown(ctx)
 }
 
+// handleStream 处理 stream 路径的 WebSocket 握手，并把连接挂载到对应 Session。
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	clientID := strings.TrimSpace(r.Header.Get(s.cfg.ClientIDHeader))
 	if clientID == "" {
@@ -177,6 +180,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	s.readStream(r.Context(), client, ch)
 }
 
+// readStream 持续读取 stream 连接中的业务 payload，并在退出时注销客户端连接。
 func (s *Server) readStream(ctx context.Context, client *clientConnector, ch *channelConn) {
 	var readErr error
 	defer func() {
@@ -199,6 +203,7 @@ func (s *Server) readStream(ctx context.Context, client *clientConnector, ch *ch
 	}
 }
 
+// handleStreamPayload 将 WebSocket payload 封装成上行 JSON 媒体帧并交给 Session。
 func (s *Server) handleStreamPayload(ctx context.Context, client *clientConnector, payload []byte) {
 	client.reportMedia(ctx, media.Frame{
 		SessionID: client.id,
@@ -217,6 +222,7 @@ func (s *Server) handleStreamPayload(ctx context.Context, client *clientConnecto
 	})
 }
 
+// reserveClient 为指定客户端预留 stream 连接，防止同一客户端重复建联。
 func (s *Server) reserveClient(clientID string) (*clientConnector, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -236,6 +242,7 @@ func (s *Server) reserveClient(clientID string) (*clientConnector, error) {
 	return client, nil
 }
 
+// unregisterClient 注销客户端连接，并在连接完全断开时移除对应 Session。
 func (s *Server) unregisterClient(clientID string, err error) {
 	var (
 		client       *clientConnector
@@ -268,6 +275,7 @@ func (s *Server) unregisterClient(clientID string, err error) {
 	}
 }
 
+// snapshotClients 返回当前客户端 Connector 快照，避免遍历时长时间持有全局锁。
 func (s *Server) snapshotClients() []*clientConnector {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -279,6 +287,7 @@ func (s *Server) snapshotClients() []*clientConnector {
 	return clients
 }
 
+// rttLoop 按配置周期测量所有在线 stream 连接的 RTT。
 func (s *Server) rttLoop(ctx context.Context) {
 	ticker := time.NewTicker(s.cfg.RTTInterval)
 	defer ticker.Stop()
@@ -303,14 +312,19 @@ func (s *Server) rttLoop(ctx context.Context) {
 	}
 }
 
+// Protocol 返回客户端 Connector 使用的协议名称。
 func (client *clientConnector) Protocol() string { return "websocket" }
 
+// ID 返回客户端硬件 ID。
 func (client *clientConnector) ID() string { return client.id }
 
+// Start 启动客户端 Connector。
+// WebSocket 读取循环由 Server 在握手成功后直接驱动，这里仅用于满足 ClientConnector 接口。
 func (client *clientConnector) Start(ctx context.Context, sink media.Sink) error {
 	return nil
 }
 
+// Consume 作为下行 sink，把 pipeline 输出的 JSON 帧写回 stream 连接。
 func (client *clientConnector) Consume(ctx context.Context, frame media.Frame) error {
 	ch := client.streamConn()
 	if ch == nil {
@@ -322,6 +336,7 @@ func (client *clientConnector) Consume(ctx context.Context, frame media.Frame) e
 	return client.server.write(ctx, ch, coderws.MessageText, frame.Payload)
 }
 
+// MeasureRTT 通过 stream 连接发送 WebSocket Ping 并返回往返耗时。
 func (client *clientConnector) MeasureRTT(ctx context.Context) (time.Duration, error) {
 	ch := client.streamConn()
 	if ch == nil {
@@ -337,6 +352,7 @@ func (client *clientConnector) MeasureRTT(ctx context.Context) (time.Duration, e
 	return time.Since(start), nil
 }
 
+// Close 关闭客户端 Connector 持有的所有 channel。
 func (client *clientConnector) Close(ctx context.Context, reason string) error {
 	if reason == "" {
 		reason = "connector closed"
@@ -350,10 +366,12 @@ func (client *clientConnector) Close(ctx context.Context, reason string) error {
 	return nil
 }
 
+// Done 返回客户端 Connector 关闭通知。
 func (client *clientConnector) Done() <-chan struct{} {
 	return client.done
 }
 
+// write 串行写入指定 WebSocket channel，避免并发写破坏连接状态。
 func (s *Server) write(ctx context.Context, ch *channelConn, msgType coderws.MessageType, payload []byte) error {
 	writeCtx, cancel := context.WithTimeout(ctx, s.cfg.WriteTimeout)
 	defer cancel()
@@ -363,6 +381,7 @@ func (s *Server) write(ctx context.Context, ch *channelConn, msgType coderws.Mes
 	return ch.conn.Write(writeCtx, msgType, payload)
 }
 
+// setStream 记录客户端的 stream channel，并清除建联中的 pending 状态。
 func (client *clientConnector) setStream(ch *channelConn) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
@@ -370,12 +389,14 @@ func (client *clientConnector) setStream(ch *channelConn) {
 	client.streamPending = false
 }
 
+// streamConn 返回当前客户端的 stream channel。
 func (client *clientConnector) streamConn() *channelConn {
 	client.mu.RLock()
 	defer client.mu.RUnlock()
 	return client.stream
 }
 
+// channels 返回当前客户端已建立的全部 channel。
 func (client *clientConnector) channels() []*channelConn {
 	client.mu.RLock()
 	defer client.mu.RUnlock()
@@ -387,24 +408,28 @@ func (client *clientConnector) channels() []*channelConn {
 	return channels
 }
 
+// setSession 记录客户端 Connector 关联的业务 Session。
 func (client *clientConnector) setSession(session *session.Session) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	client.session = session
 }
 
+// getSession 返回客户端 Connector 关联的业务 Session。
 func (client *clientConnector) getSession() *session.Session {
 	client.mu.RLock()
 	defer client.mu.RUnlock()
 	return client.session
 }
 
+// reportMedia 把上行媒体帧转交给关联的 Session。
 func (client *clientConnector) reportMedia(ctx context.Context, frame media.Frame) {
 	if session := client.getSession(); session != nil {
 		session.OnMedia(ctx, frame)
 	}
 }
 
+// reportError 把连接错误上报给 Session；Session 尚未创建时直接记录日志。
 func (client *clientConnector) reportError(ctx context.Context, err error) {
 	if session := client.getSession(); session != nil {
 		session.OnError(ctx, err)
@@ -417,12 +442,14 @@ func (client *clientConnector) reportError(ctx context.Context, err error) {
 	)
 }
 
+// closeDone 关闭客户端 Connector 的 done channel，保证只关闭一次。
 func (client *clientConnector) closeDone() {
 	client.closeOnce.Do(func() {
 		close(client.done)
 	})
 }
 
+// isNormalClose 判断错误是否属于正常连接关闭。
 func isNormalClose(err error) bool {
 	var closeErr coderws.CloseError
 	if errors.As(err, &closeErr) {

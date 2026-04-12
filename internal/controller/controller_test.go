@@ -9,6 +9,7 @@ import (
 	"rtc-media-server/internal/media"
 )
 
+// TestControllerDispatchesDownlinkReference 验证 Controller 会分发下行参考信号。
 func TestControllerDispatchesDownlinkReference(t *testing.T) {
 	consumer := &referenceConsumer{}
 	ctrl := New(Config{ReferenceQueueSize: 1}, Dependencies{
@@ -35,6 +36,7 @@ func TestControllerDispatchesDownlinkReference(t *testing.T) {
 	}
 }
 
+// TestControllerSilenceTimeoutClosesSession 验证静音超时事件会触发 Session 关闭。
 func TestControllerSilenceTimeoutClosesSession(t *testing.T) {
 	closed := make(chan string, 1)
 	ctrl := New(Config{}, Dependencies{
@@ -63,6 +65,7 @@ func TestControllerSilenceTimeoutClosesSession(t *testing.T) {
 	}
 }
 
+// TestControllerDropsReferenceAfterClose 验证 Controller 关闭后丢弃参考信号。
 func TestControllerDropsReferenceAfterClose(t *testing.T) {
 	ctrl := New(Config{ReferenceQueueSize: 1}, Dependencies{
 		SessionID: "client-c",
@@ -89,15 +92,18 @@ func TestControllerDropsReferenceAfterClose(t *testing.T) {
 	}
 }
 
+// referenceConsumer 是测试用参考信号消费者。
 type referenceConsumer struct {
 	count atomic.Uint64
 }
 
+// AddReference 记录收到的参考信号次数。
 func (c *referenceConsumer) AddReference(ctx context.Context, frame media.Frame) error {
 	c.count.Add(1)
 	return nil
 }
 
+// Count 返回收到的参考信号次数。
 func (c *referenceConsumer) Count() uint64 {
 	return c.count.Load()
 }

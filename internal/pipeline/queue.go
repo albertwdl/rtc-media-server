@@ -134,6 +134,7 @@ func (p *QueuePipeline) Stats() media.Stats {
 	}
 }
 
+// run 从队列中串行取出媒体帧并执行完整 stage chain。
 func (p *QueuePipeline) run() {
 	for {
 		select {
@@ -156,6 +157,7 @@ func (p *QueuePipeline) run() {
 	}
 }
 
+// process 对单帧媒体依次执行 stage，并在成功后投递到 sink。
 func (p *QueuePipeline) process(ctx context.Context, frame media.Frame) error {
 	var err error
 	for _, stage := range p.stages {
@@ -194,6 +196,7 @@ func (p *QueuePipeline) process(ctx context.Context, frame media.Frame) error {
 	return nil
 }
 
+// reportError 调用外部错误处理器上报 pipeline 错误。
 func (p *QueuePipeline) reportError(ctx context.Context, frame media.Frame, err error) {
 	if p.errorHandler != nil {
 		p.errorHandler(ctx, frame, err)

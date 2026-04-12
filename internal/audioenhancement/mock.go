@@ -42,6 +42,7 @@ func NewMockEngine(outputDir string, logger *slog.Logger) (*MockEngine, error) {
 	}, nil
 }
 
+// Name 返回语音增强 mock stage 名称。
 func (e *MockEngine) Name() string { return "aec_agc_ans_mock" }
 
 // AddReference 接收下行参考信号。真实 AEC 会把该信号写入回声参考缓冲区。
@@ -127,6 +128,7 @@ func (e *MockEngine) CloseSession(clientID string) error {
 	return nil
 }
 
+// fileLocked 返回指定 client 的 PCM 输出文件，调用方必须持有 e.mu。
 func (e *MockEngine) fileLocked(clientID string) (*os.File, error) {
 	file := e.files[clientID]
 	if file != nil {
@@ -142,10 +144,12 @@ func (e *MockEngine) fileLocked(clientID string) (*os.File, error) {
 	return file, nil
 }
 
+// filePath 返回指定 client 的 PCM 输出文件路径。
 func (e *MockEngine) filePath(clientID string) string {
 	return filepath.Join(e.outputDir, safeFileName(clientID)+".pcm")
 }
 
+// safeFileName 将客户端标识转换为可用作文件名的安全字符串。
 func safeFileName(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {

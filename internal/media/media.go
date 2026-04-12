@@ -100,6 +100,7 @@ func NewStageFunc(name string, fn func(ctx context.Context, frame Frame) (Frame,
 	return StageFunc{name: name, fn: fn}
 }
 
+// Name 返回函数型 stage 的名称。
 func (fn StageFunc) Name() string {
 	if fn.name == "" {
 		return "stage_func"
@@ -107,6 +108,7 @@ func (fn StageFunc) Name() string {
 	return fn.name
 }
 
+// Process 执行函数型 stage 包装的处理函数。
 func (fn StageFunc) Process(ctx context.Context, frame Frame) (Frame, error) {
 	if fn.fn == nil {
 		return frame, nil
@@ -114,6 +116,7 @@ func (fn StageFunc) Process(ctx context.Context, frame Frame) (Frame, error) {
 	return fn.fn(ctx, frame)
 }
 
+// Close 关闭函数型 stage。
 func (fn StageFunc) Close(ctx context.Context) error {
 	return nil
 }
@@ -126,6 +129,7 @@ type Sink interface {
 // SinkFunc 允许用函数快速实现 Sink。
 type SinkFunc func(ctx context.Context, frame Frame) error
 
+// Consume 调用函数型 sink 包装的消费函数。
 func (fn SinkFunc) Consume(ctx context.Context, frame Frame) error {
 	return fn(ctx, frame)
 }

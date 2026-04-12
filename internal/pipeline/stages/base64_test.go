@@ -7,6 +7,7 @@ import (
 	"rtc-media-server/internal/media"
 )
 
+// TestBase64StagesRoundTrip 验证 base64 编解码 stage 能往返还原 payload。
 func TestBase64StagesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	input := media.Frame{
