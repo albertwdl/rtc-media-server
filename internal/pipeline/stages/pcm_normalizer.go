@@ -9,6 +9,12 @@ import (
 	"rtc-media-server/internal/media"
 )
 
+const (
+	// PCM16BytesPerSample 是 PCM16 单个采样占用的字节数。
+	PCM16BytesPerSample = 2
+	minOutputSamples    = 1
+)
+
 // PCM16Normalizer 把 PCM16LE 音频归一化到目标采样率和声道数。
 // 当前实现使用轻量的最近邻重采样，便于 WebSocket demo 独立运行；生产可替换为更高质量实现。
 type PCM16Normalizer struct {
@@ -43,7 +49,7 @@ func (n *PCM16Normalizer) Process(ctx context.Context, frame media.Frame) (media
 	if frame.Format.Channels <= 0 {
 		return frame, errors.New("pcm normalizer requires positive channel count")
 	}
-	if len(frame.Payload)%2 != 0 {
+	if len(frame.Payload)%PCM16BytesPerSample != 0 {
 		return frame, errors.New("pcm16 payload length must be even")
 	}
 
@@ -60,25 +66,25 @@ func (n *PCM16Normalizer) Close(ctx context.Context) error { return nil }
 
 // bytesToSamples 将 little-endian PCM16 字节转换为采样数组。
 func bytesToSamples(payload []byte) []int16 {
-	samples := make([]int16, len(payload)/2)
+	samples := make([]int16, len(payload)/PCM16BytesPerSample)
 	for i := range samples {
-		samples[i] = int16(binary.LittleEndian.Uint16(payload[i*2:]))
+		samples[i] = int16(binary.LittleEndian.Uint16(payload[i*PCM16BytesPerSample:]))
 	}
 	return samples
 }
 
 // samplesToBytes 将 PCM16 采样数组转换为 little-endian 字节。
 func samplesToBytes(samples []int16) []byte {
-	payload := make([]byte, len(samples)*2)
+	payload := make([]byte, len(samples)*PCM16BytesPerSample)
 	for i, sample := range samples {
-		binary.LittleEndian.PutUint16(payload[i*2:], uint16(sample))
+		binary.LittleEndian.PutUint16(payload[i*PCM16BytesPerSample:], uint16(sample))
 	}
 	return payload
 }
 
 // downmixToMono 将多声道 PCM 采样按平均值混合为单声道。
 func downmixToMono(samples []int16, channels int) []int16 {
-	if channels == 1 {
+	if channels == media.DefaultAudioChannels {
 		return samples
 	}
 	frames := len(samples) / channels
@@ -103,7 +109,7 @@ func resampleNearest(samples []int16, fromRate, toRate int) []int16 {
 	}
 	outLen := len(samples) * toRate / fromRate
 	if outLen <= 0 {
-		outLen = 1
+		outLen = minOutputSamples
 	}
 	out := make([]int16, outLen)
 	for i := range out {

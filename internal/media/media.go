@@ -14,6 +14,13 @@ const (
 	CodecRTP      = "rtp"
 )
 
+const (
+	// DefaultAudioSampleRate 是端侧默认 PCM16 采样率。
+	DefaultAudioSampleRate = 8000
+	// DefaultAudioChannels 是端侧默认声道数。
+	DefaultAudioChannels = 1
+)
+
 // Direction 表示媒体帧在系统中的方向。
 type Direction string
 
@@ -147,7 +154,7 @@ func DefaultPCM16Format() Format {
 	return Format{
 		Kind:       KindAudio,
 		Codec:      CodecPCM16LE,
-		SampleRate: 8000,
-		Channels:   1,
+		SampleRate: DefaultAudioSampleRate,
+		Channels:   DefaultAudioChannels,
 	}
 }

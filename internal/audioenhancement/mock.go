@@ -12,6 +12,11 @@ import (
 	"rtc-media-server/internal/media"
 )
 
+const (
+	pcmOutputDirPerm  = 0o755
+	pcmOutputFilePerm = 0o600
+)
+
 // MockEngine 模拟 AEC+AGC+ANS 语音增强引擎。
 // 当前实现不做真实算法处理，只把经过该 stage 的 PCM 追加保存到本地文件。
 type MockEngine struct {
@@ -28,7 +33,7 @@ func NewMockEngine(outputDir string) (*MockEngine, error) {
 	if outputDir == "" {
 		outputDir = filepath.Join("runtime", "pcm")
 	}
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+	if err := os.MkdirAll(outputDir, pcmOutputDirPerm); err != nil {
 		return nil, fmt.Errorf("创建 PCM 输出目录失败: %w", err)
 	}
 	return &MockEngine{
@@ -131,7 +136,7 @@ func (e *MockEngine) fileLocked(clientID string) (*os.File, error) {
 	}
 
 	path := e.filePath(clientID)
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, pcmOutputFilePerm)
 	if err != nil {
 		return nil, fmt.Errorf("打开 PCM 文件失败: %w", err)
 	}

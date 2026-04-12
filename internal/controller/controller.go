@@ -13,6 +13,15 @@ const (
 	EventSilenceTimeout = "silence_timeout"
 )
 
+const (
+	// DefaultInitialSilenceTimeout 是连接建立后的首次静音等待时长。
+	DefaultInitialSilenceTimeout = 15 * time.Second
+	// DefaultSilenceTimeout 是首次有效语音后的静音等待时长。
+	DefaultSilenceTimeout = 5 * time.Second
+	// DefaultReferenceQueueSize 是下行参考信号默认队列长度。
+	DefaultReferenceQueueSize = 16
+)
+
 // Config 定义 Controller 的跨管线协调参数。
 type Config struct {
 	InitialSilenceTimeout time.Duration
@@ -44,13 +53,13 @@ type Controller struct {
 // New 创建每个 Session 独立持有的 Controller。
 func New(cfg Config, deps Dependencies) *Controller {
 	if cfg.InitialSilenceTimeout <= 0 {
-		cfg.InitialSilenceTimeout = 15 * time.Second
+		cfg.InitialSilenceTimeout = DefaultInitialSilenceTimeout
 	}
 	if cfg.SilenceTimeout <= 0 {
-		cfg.SilenceTimeout = 5 * time.Second
+		cfg.SilenceTimeout = DefaultSilenceTimeout
 	}
 	if cfg.ReferenceQueueSize <= 0 {
-		cfg.ReferenceQueueSize = 16
+		cfg.ReferenceQueueSize = DefaultReferenceQueueSize
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &Controller{

@@ -2,13 +2,28 @@ package g711
 
 import "encoding/binary"
 
-const alawMax = 0x7FFF
+const (
+	alawMax              = 0x7FFF
+	alawToggleMask       = 0x55
+	alawSignBit          = 0x80
+	alawQuantMask        = 0x0F
+	alawSegmentMask      = 0x70
+	alawSegmentShift     = 4
+	alawSegmentBias      = 0x108
+	alawPositiveMask     = 0xD5
+	alawLinearThreshold  = 256
+	alawSegmentStepShift = 3
+	alawMaxSegment       = 8
+	pcm16BytesPerSample  = 2
+)
+
+var alawSegmentEnds = [...]int{0x1F, 0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF, 0x7FF, 0xFFF}
 
 // DecodeALawToPCM 将 G.711 A-law 字节流解码为 signed 16-bit little-endian PCM。
 func DecodeALawToPCM(alaw []byte) []byte {
-	pcm := make([]byte, len(alaw)*2)
+	pcm := make([]byte, len(alaw)*pcm16BytesPerSample)
 	for i, sample := range alaw {
-		binary.LittleEndian.PutUint16(pcm[i*2:], uint16(alawToLinear(sample)))
+		binary.LittleEndian.PutUint16(pcm[i*pcm16BytesPerSample:], uint16(alawToLinear(sample)))
 	}
 	return pcm
 }
@@ -16,12 +31,12 @@ func DecodeALawToPCM(alaw []byte) []byte {
 // EncodePCMToALaw 将 signed 16-bit little-endian PCM 编码为 G.711 A-law。
 // 如果输入长度为奇数，最后一个无法组成 16-bit 采样的字节会被忽略。
 func EncodePCMToALaw(pcm []byte) []byte {
-	if len(pcm) < 2 {
+	if len(pcm) < pcm16BytesPerSample {
 		return nil
 	}
-	alaw := make([]byte, len(pcm)/2)
+	alaw := make([]byte, len(pcm)/pcm16BytesPerSample)
 	for i := range alaw {
-		sample := int16(binary.LittleEndian.Uint16(pcm[i*2:]))
+		sample := int16(binary.LittleEndian.Uint16(pcm[i*pcm16BytesPerSample:]))
 		alaw[i] = linearToALaw(sample)
 	}
 	return alaw
@@ -29,19 +44,19 @@ func EncodePCMToALaw(pcm []byte) []byte {
 
 // alawToLinear 按 G.711 A-law 标准把单个 8-bit 样本展开为线性 PCM。
 func alawToLinear(aVal byte) int16 {
-	aVal ^= 0x55
-	t := int16(aVal&0x0F) << 4
-	seg := (aVal & 0x70) >> 4
+	aVal ^= alawToggleMask
+	t := int16(aVal&alawQuantMask) << alawSegmentShift
+	seg := (aVal & alawSegmentMask) >> alawSegmentShift
 	switch seg {
 	case 0:
-		t += 8
+		t += alawMaxSegment
 	case 1:
-		t += 0x108
+		t += alawSegmentBias
 	default:
-		t += 0x108
+		t += alawSegmentBias
 		t <<= seg - 1
 	}
-	if aVal&0x80 != 0 {
+	if aVal&alawSignBit != 0 {
 		return -t
 	}
 	return t
@@ -50,9 +65,9 @@ func alawToLinear(aVal byte) int16 {
 // linearToALaw 按 G.711 A-law 标准把单个 PCM 样本压缩为 8-bit A-law。
 func linearToALaw(sample int16) byte {
 	pcm := int(sample)
-	mask := byte(0xD5)
+	mask := byte(alawPositiveMask)
 	if pcm < 0 {
-		mask = 0x55
+		mask = alawToggleMask
 		pcm = -pcm - 1
 	}
 	if pcm > alawMax {
@@ -60,22 +75,22 @@ func linearToALaw(sample int16) byte {
 	}
 
 	var aval byte
-	if pcm >= 256 {
+	if pcm >= alawLinearThreshold {
 		seg := searchSegment(pcm)
-		aval = byte(seg << 4)
-		aval |= byte((pcm >> (seg + 3)) & 0x0F)
+		aval = byte(seg << alawSegmentShift)
+		aval |= byte((pcm >> (seg + alawSegmentStepShift)) & alawQuantMask)
 	} else {
-		aval = byte(pcm >> 4)
+		aval = byte(pcm >> alawSegmentShift)
 	}
 	return aval ^ mask
 }
 
 // searchSegment 查找 A-law 编码时使用的压缩段。
 func searchSegment(pcm int) int {
-	for seg, end := range [...]int{0x1F, 0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF, 0x7FF, 0xFFF} {
+	for seg, end := range alawSegmentEnds {
 		if pcm <= end {
 			return seg
 		}
 	}
-	return 8
+	return alawMaxSegment
 }

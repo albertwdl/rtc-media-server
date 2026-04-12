@@ -20,11 +20,26 @@ import (
 	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/log"
 	"rtc-media-server/internal/media"
+	"rtc-media-server/internal/pipeline"
 	"rtc-media-server/internal/session"
 	"rtc-media-server/internal/websocket"
 )
 
-const configPath = "configs/websocket.yaml"
+const (
+	configPath = "configs/websocket.yaml"
+
+	demoRSAKeyBits     = 2048
+	demoCertValidDays  = 365
+	demoCertDirPerm    = 0o755
+	demoCertFilePerm   = 0o600
+	demoCertLoopbackIP = "127.0.0.1"
+	demoCertWildcardIP = "0.0.0.0"
+	demoCertLocalhost  = "localhost"
+	demoCertCommonName = "rtc-media-server-demo"
+	demoCertPEMType    = "CERTIFICATE"
+	demoPrivateKeyType = "RSA PRIVATE KEY"
+	exitFailure        = 1
+)
 
 // main 组装 demo 运行所需的配置、SessionManager 和 WebSocket 服务。
 func main() {
@@ -38,9 +53,9 @@ func main() {
 	}
 
 	sessionManager := session.NewManager(session.Config{
-		UplinkQueueSize:   32,
-		DownlinkQueueSize: 32,
-		CloseTimeout:      3 * time.Second,
+		UplinkQueueSize:   pipeline.DefaultQueueSize,
+		DownlinkQueueSize: pipeline.DefaultQueueSize,
+		CloseTimeout:      session.DefaultCloseTimeout,
 		TargetFormat:      media.DefaultPCM16Format(),
 	})
 
@@ -86,14 +101,14 @@ func ensureDemoCertificate(certFile, keyFile string) error {
 		log.Warnf("检测到证书或私钥缺失，将重新生成本地 demo 证书 cert_file=%s key_file=%s", certFile, keyFile)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(certFile), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(certFile), demoCertDirPerm); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(keyFile), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(keyFile), demoCertDirPerm); err != nil {
 		return err
 	}
 
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	privateKey, err := rsa.GenerateKey(rand.Reader, demoRSAKeyBits)
 	if err != nil {
 		return err
 	}
@@ -101,16 +116,16 @@ func ensureDemoCertificate(certFile, keyFile string) error {
 	template := x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject: pkix.Name{
-			CommonName: "rtc-media-server-demo",
+			CommonName: demoCertCommonName,
 		},
 		NotBefore: time.Now().Add(-time.Hour),
-		NotAfter:  time.Now().Add(365 * 24 * time.Hour),
+		NotAfter:  time.Now().Add(demoCertValidDays * 24 * time.Hour),
 		KeyUsage:  x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{
 			x509.ExtKeyUsageServerAuth,
 		},
-		IPAddresses: []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("0.0.0.0")},
-		DNSNames:    []string{"localhost"},
+		IPAddresses: []net.IP{net.ParseIP(demoCertLoopbackIP), net.ParseIP(demoCertWildcardIP)},
+		DNSNames:    []string{demoCertLocalhost},
 	}
 
 	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
@@ -118,15 +133,15 @@ func ensureDemoCertificate(certFile, keyFile string) error {
 		return err
 	}
 
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: demoCertPEMType, Bytes: certDER})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: demoPrivateKeyType, Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
 	if len(certPEM) == 0 || len(keyPEM) == 0 {
 		return errors.New("编码本地 demo 证书失败")
 	}
-	if err := os.WriteFile(certFile, certPEM, 0o600); err != nil {
+	if err := os.WriteFile(certFile, certPEM, demoCertFilePerm); err != nil {
 		return err
 	}
-	if err := os.WriteFile(keyFile, keyPEM, 0o600); err != nil {
+	if err := os.WriteFile(keyFile, keyPEM, demoCertFilePerm); err != nil {
 		return err
 	}
 	log.Infof("已生成本地 demo WSS 证书 cert_file=%s key_file=%s", certFile, keyFile)
@@ -142,5 +157,5 @@ func fileExists(path string) bool {
 // fatal 记录致命错误并退出进程。
 func fatal(msg string, err error) {
 	log.Errorf("%s: %v", msg, err)
-	os.Exit(1)
+	os.Exit(exitFailure)
 }

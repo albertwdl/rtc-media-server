@@ -21,16 +21,16 @@ type MockStage struct {
 
 // NewMockStage 创建 VAD mock stage。
 func NewMockStage() *MockStage {
-	return NewMockStageWithTimeouts(15*time.Second, 5*time.Second)
+	return NewMockStageWithTimeouts(controller.DefaultInitialSilenceTimeout, controller.DefaultSilenceTimeout)
 }
 
 // NewMockStageWithTimeouts 创建带静音超时配置的 VAD mock stage。
 func NewMockStageWithTimeouts(initialSilence, silence time.Duration) *MockStage {
 	if initialSilence <= 0 {
-		initialSilence = 15 * time.Second
+		initialSilence = controller.DefaultInitialSilenceTimeout
 	}
 	if silence <= 0 {
-		silence = 5 * time.Second
+		silence = controller.DefaultSilenceTimeout
 	}
 	return &MockStage{
 		initialSilenceLimit: initialSilence,

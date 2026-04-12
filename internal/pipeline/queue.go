@@ -13,6 +13,11 @@ import (
 
 var errPipelineClosed = errors.New("pipeline closed")
 
+const (
+	// DefaultQueueSize 是每条 pipeline 默认使用的有界队列长度。
+	DefaultQueueSize = 32
+)
+
 // ErrorStrategy 定义 stage 处理失败后的 pipeline 行为。
 type ErrorStrategy string
 
@@ -63,7 +68,7 @@ func NewQueuePipeline(name string, queueSize int, stages []media.Stage, sink med
 // NewQueuePipelineWithStrategy 创建一个带错误策略的有界队列 pipeline。
 func NewQueuePipelineWithStrategy(name string, queueSize int, stages []media.Stage, sink media.Sink, strategy ErrorStrategy) *QueuePipeline {
 	if queueSize <= 0 {
-		queueSize = 32
+		queueSize = DefaultQueueSize
 	}
 	if strategy == "" {
 		strategy = ErrorStrategyDrop

@@ -7,12 +7,21 @@ import (
 	"path/filepath"
 	"time"
 
+	"rtc-media-server/internal/media"
+
 	"gopkg.in/yaml.v3"
 )
 
 const (
 	DefaultStreamPath     = "/v1/stream"
 	DefaultClientIDHeader = "X-Hardware-Id"
+	DefaultListen         = "0.0.0.0"
+	DefaultPort           = 8443
+	DefaultRTTInterval    = 10 * time.Second
+	DefaultReadTimeout    = 30 * time.Second
+	DefaultWriteTimeout   = 10 * time.Second
+	DefaultMaxMessageSize = 1 << 20
+	MaxTCPPort            = 65535
 )
 
 // Config 定义 WebSocket 服务端监听、TLS、超时、RTT 和 stream 载荷配置。
@@ -44,17 +53,17 @@ type StreamConfig struct {
 // DefaultConfig 返回模块的默认配置。
 func DefaultConfig() Config {
 	return Config{
-		Listen:          "0.0.0.0",
-		Port:            8443,
+		Listen:          DefaultListen,
+		Port:            DefaultPort,
 		StreamPath:      DefaultStreamPath,
 		ClientIDHeader:  DefaultClientIDHeader,
-		RTTInterval:     10 * time.Second,
-		ReadTimeout:     30 * time.Second,
-		WriteTimeout:    10 * time.Second,
-		MaxMessageBytes: 1 << 20,
+		RTTInterval:     DefaultRTTInterval,
+		ReadTimeout:     DefaultReadTimeout,
+		WriteTimeout:    DefaultWriteTimeout,
+		MaxMessageBytes: DefaultMaxMessageSize,
 		Stream: StreamConfig{
-			SampleRate: 8000,
-			Channels:   1,
+			SampleRate: media.DefaultAudioSampleRate,
+			Channels:   media.DefaultAudioChannels,
 		},
 	}
 }
@@ -102,7 +111,7 @@ func defaultConfigPath() (string, error) {
 
 // validateConfig 校验 WebSocket 运行配置的必填项和取值范围。
 func validateConfig(cfg Config) error {
-	if cfg.Port <= 0 || cfg.Port > 65535 {
+	if cfg.Port <= 0 || cfg.Port > MaxTCPPort {
 		return fmt.Errorf("invalid websocket port %d", cfg.Port)
 	}
 	if cfg.StreamPath == "" || cfg.StreamPath[0] != '/' {

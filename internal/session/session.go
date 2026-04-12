@@ -17,6 +17,11 @@ import (
 	"rtc-media-server/internal/vad"
 )
 
+const (
+	// DefaultCloseTimeout 是 Session 关闭流程默认等待时长。
+	DefaultCloseTimeout = 3 * time.Second
+)
+
 // Config 定义 Session 管理和固定链路运行所需的参数。
 type Config struct {
 	UplinkQueueSize   int
@@ -182,13 +187,13 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 // normalizeConfig 填充 Session 运行参数的默认值。
 func normalizeConfig(cfg Config) Config {
 	if cfg.UplinkQueueSize <= 0 {
-		cfg.UplinkQueueSize = 32
+		cfg.UplinkQueueSize = pipeline.DefaultQueueSize
 	}
 	if cfg.DownlinkQueueSize <= 0 {
-		cfg.DownlinkQueueSize = 32
+		cfg.DownlinkQueueSize = pipeline.DefaultQueueSize
 	}
 	if cfg.CloseTimeout <= 0 {
-		cfg.CloseTimeout = 3 * time.Second
+		cfg.CloseTimeout = DefaultCloseTimeout
 	}
 	if cfg.TargetFormat.Kind == "" {
 		cfg.TargetFormat = media.DefaultPCM16Format()
