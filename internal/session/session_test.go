@@ -18,8 +18,8 @@ func TestNewSessionCreatesFixedComponents(t *testing.T) {
 	}
 	defer sess.Close(context.Background(), "test done")
 
-	if client.sink == nil {
-		t.Fatal("client Start did not bind uplink sink")
+	if client.input == nil {
+		t.Fatal("client BindInput did not bind uplink input")
 	}
 	if sess.ServiceConnector() == nil {
 		t.Fatal("service connector was not created")
@@ -148,7 +148,7 @@ func testConfig() Config {
 type testClientConnector struct {
 	id       string
 	done     chan struct{}
-	sink     media.Sink
+	input    media.Input
 	consumed chan media.Frame
 	closed   bool
 	mu       sync.Mutex
@@ -160,14 +160,14 @@ func (c *testClientConnector) ID() string { return c.id }
 // Protocol 返回测试客户端协议名称。
 func (c *testClientConnector) Protocol() string { return "test_client" }
 
-// Start 启动测试客户端 Connector。
-func (c *testClientConnector) Start(ctx context.Context, sink media.Sink) error {
-	c.sink = sink
+// BindInput 绑定测试客户端收到数据后要推送到的 pipeline 输入端。
+func (c *testClientConnector) BindInput(input media.Input) error {
+	c.input = input
 	return nil
 }
 
-// Consume 消费测试下行媒体帧。
-func (c *testClientConnector) Consume(ctx context.Context, frame media.Frame) error {
+// SendData 记录测试下行媒体帧。
+func (c *testClientConnector) SendData(ctx context.Context, frame media.Frame) error {
 	if c.consumed != nil {
 		select {
 		case c.consumed <- frame:

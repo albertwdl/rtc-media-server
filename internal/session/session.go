@@ -39,7 +39,8 @@ type Manager struct {
 	sessions map[string]*Session
 }
 
-// Session 是业务会话核心，持有 Connector、Controller 和上下行两条 pipeline。
+// Session 是业务会话核心，负责把 Connector 的数据输入输出和上下行 pipeline 串起来。
+// Connector 负责连接收发，pipeline 负责媒体处理流。
 type Session struct {
 	id               string
 	clientConnector  connector.ClientConnector
@@ -153,10 +154,8 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 		stages.NewWebSocketJSONPack(),
 	}
 
-	s.uplink = s.newPipeline("uplink", cfg.UplinkQueueSize, uplinkStages, service)
-	s.downlink = s.newPipeline("downlink", cfg.DownlinkQueueSize, downlinkStages, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
-		return client.Consume(ctx, frame)
-	}))
+	s.uplink = s.newPipeline("uplink", cfg.UplinkQueueSize, uplinkStages, media.OutputFunc(service.SendData))
+	s.downlink = s.newPipeline("downlink", cfg.DownlinkQueueSize, downlinkStages, media.OutputFunc(client.SendData))
 
 	if err := s.uplink.Start(sessionCtx); err != nil {
 		cleanup("start uplink failed")
@@ -166,17 +165,14 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 		cleanup("start downlink failed")
 		return nil, err
 	}
-	if err := service.Start(sessionCtx, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
+	if err := service.BindInput(media.InputFunc(func(ctx context.Context, frame media.Frame) error {
 		return s.EnqueueDownlink(ctx, frame)
 	})); err != nil {
-		cleanup("start service connector failed")
+		cleanup("bind service connector input failed")
 		return nil, err
 	}
-	if err := client.Start(sessionCtx, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
-		s.OnMedia(ctx, frame)
-		return nil
-	})); err != nil {
-		cleanup("start client connector failed")
+	if err := client.BindInput(s.uplink); err != nil {
+		cleanup("bind client connector input failed")
 		return nil, err
 	}
 
@@ -202,8 +198,8 @@ func normalizeConfig(cfg Config) Config {
 }
 
 // newPipeline 创建带 Session 错误回调的队列 pipeline。
-func (s *Session) newPipeline(name string, queueSize int, stages []media.Stage, sink media.Sink) media.Pipeline {
-	p := pipeline.NewQueuePipeline(name, queueSize, stages, sink)
+func (s *Session) newPipeline(name string, queueSize int, stages []media.Stage, output media.Output) media.Pipeline {
+	p := pipeline.NewQueuePipeline(name, queueSize, stages, output)
 	p.SetErrorHandler(func(ctx context.Context, frame media.Frame, err error) {
 		s.OnError(ctx, fmt.Errorf("%s pipeline: %w", name, err))
 	})
@@ -335,18 +331,6 @@ func (s *Session) Close(ctx context.Context, reason string) error {
 		log.Infof("client_id=%s session closed reason=%s", s.id, reason)
 	})
 	return closeErr
-}
-
-// OnMedia 接收客户端 Connector 上报的媒体帧并投递到上行 pipeline。
-func (s *Session) OnMedia(ctx context.Context, frame media.Frame) {
-	frame.SessionID = s.id
-	frame.Direction = media.DirectionUplink
-	if frame.Timestamp.IsZero() {
-		frame.Timestamp = time.Now()
-	}
-	if err := s.uplink.Push(ctx, frame); err != nil {
-		s.OnError(ctx, fmt.Errorf("push uplink frame: %w", err))
-	}
 }
 
 // OnEvent 接收 Connector 或协议适配 stage 上报的非媒体事件。

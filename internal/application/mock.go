@@ -17,8 +17,8 @@ type MockConnector struct {
 	once  sync.Once
 	count atomic.Uint64
 
-	mu       sync.RWMutex
-	downlink media.Sink
+	mu        sync.RWMutex
+	dataInput media.Input
 }
 
 // NewMockConnector 创建服务侧 mock connector。
@@ -32,16 +32,16 @@ func (c *MockConnector) ID() string { return c.id }
 // Protocol 返回 mock 服务连接器协议名称。
 func (c *MockConnector) Protocol() string { return "mock_service" }
 
-// Start 绑定服务侧下行输出目标。
-func (c *MockConnector) Start(ctx context.Context, downlink media.Sink) error {
+// BindInput 绑定服务侧收到下行数据后要推送到的 pipeline 输入端。
+func (c *MockConnector) BindInput(input media.Input) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.downlink = downlink
+	c.dataInput = input
 	return nil
 }
 
-// Consume 接收经过完整上行 pipeline 处理后的媒体帧。
-func (c *MockConnector) Consume(ctx context.Context, frame media.Frame) error {
+// SendData 接收经过完整上行 pipeline 处理后的媒体帧。
+func (c *MockConnector) SendData(ctx context.Context, frame media.Frame) error {
 	c.count.Add(1)
 	log.Infof(
 		"client_id=%s service connector received frame protocol=%s direction=%s codec=%s bytes=%d",
@@ -57,12 +57,12 @@ func (c *MockConnector) Consume(ctx context.Context, frame media.Frame) error {
 // PushDownlink 用于测试或 demo 将服务侧 PCM 投递回当前 Session。
 func (c *MockConnector) PushDownlink(ctx context.Context, frame media.Frame) error {
 	c.mu.RLock()
-	downlink := c.downlink
+	input := c.dataInput
 	c.mu.RUnlock()
-	if downlink == nil {
+	if input == nil {
 		return nil
 	}
-	return downlink.Consume(ctx, frame)
+	return input.Push(ctx, frame)
 }
 
 // Close 关闭 mock 服务连接器。

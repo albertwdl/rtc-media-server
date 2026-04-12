@@ -225,7 +225,7 @@ func TestOnConnectErrorRejectsConnection(t *testing.T) {
 			if attempts.Add(1) == 1 {
 				return errors.New("attach failed")
 			}
-			return client.Start(ctx, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
+			return client.BindInput(media.InputFunc(func(ctx context.Context, frame media.Frame) error {
 				return nil
 			}))
 		},

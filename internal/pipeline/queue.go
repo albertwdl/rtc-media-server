@@ -42,7 +42,7 @@ type QueuePipeline struct {
 	name          string
 	queue         chan media.Frame
 	stages        []media.Stage
-	sink          media.Sink
+	output        media.Output
 	errorStrategy ErrorStrategy
 	errorHandler  ErrorHandler
 
@@ -61,12 +61,12 @@ func (p *QueuePipeline) SetErrorHandler(handler ErrorHandler) {
 }
 
 // NewQueuePipeline 创建一个有界队列 pipeline。
-func NewQueuePipeline(name string, queueSize int, stages []media.Stage, sink media.Sink) *QueuePipeline {
-	return NewQueuePipelineWithStrategy(name, queueSize, stages, sink, ErrorStrategyDrop)
+func NewQueuePipeline(name string, queueSize int, stages []media.Stage, output media.Output) *QueuePipeline {
+	return NewQueuePipelineWithStrategy(name, queueSize, stages, output, ErrorStrategyDrop)
 }
 
 // NewQueuePipelineWithStrategy 创建一个带错误策略的有界队列 pipeline。
-func NewQueuePipelineWithStrategy(name string, queueSize int, stages []media.Stage, sink media.Sink, strategy ErrorStrategy) *QueuePipeline {
+func NewQueuePipelineWithStrategy(name string, queueSize int, stages []media.Stage, output media.Output, strategy ErrorStrategy) *QueuePipeline {
 	if queueSize <= 0 {
 		queueSize = DefaultQueueSize
 	}
@@ -77,7 +77,7 @@ func NewQueuePipelineWithStrategy(name string, queueSize int, stages []media.Sta
 		name:          name,
 		queue:         make(chan media.Frame, queueSize),
 		stages:        append([]media.Stage(nil), stages...),
-		sink:          sink,
+		output:        output,
 		errorStrategy: strategy,
 		done:          make(chan struct{}),
 	}
@@ -157,7 +157,7 @@ func (p *QueuePipeline) run() {
 	}
 }
 
-// process 对单帧媒体依次执行 stage，并在成功后投递到 sink。
+// process 对单帧媒体依次执行 stage，并在成功后投递到 output。
 func (p *QueuePipeline) process(ctx context.Context, frame media.Frame) error {
 	var err error
 	for _, stage := range p.stages {
@@ -186,11 +186,11 @@ func (p *QueuePipeline) process(ctx context.Context, frame media.Frame) error {
 			return nil
 		}
 	}
-	if p.sink == nil {
+	if p.output == nil {
 		return nil
 	}
-	if err := p.sink.Consume(ctx, frame); err != nil {
-		p.reportError(ctx, frame, fmt.Errorf("sink: %w", err))
+	if err := p.output.SendData(ctx, frame); err != nil {
+		p.reportError(ctx, frame, fmt.Errorf("output: %w", err))
 		return err
 	}
 	return nil

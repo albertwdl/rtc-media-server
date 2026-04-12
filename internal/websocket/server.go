@@ -43,7 +43,7 @@ type clientConnector struct {
 	mu            sync.RWMutex
 	stream        *channelConn
 	streamPending bool
-	mediaSink     media.Sink
+	dataInput     media.Input
 	done          chan struct{}
 	closeOnce     sync.Once
 }
@@ -198,9 +198,9 @@ func (s *Server) readStream(ctx context.Context, client *clientConnector, ch *ch
 	}
 }
 
-// handleStreamPayload 将 WebSocket payload 封装成上行 JSON 媒体帧并交给绑定的 sink。
+// handleStreamPayload 将 WebSocket payload 封装成上行 JSON 媒体帧并交给绑定的 pipeline 输入端。
 func (s *Server) handleStreamPayload(ctx context.Context, client *clientConnector, payload []byte) {
-	client.reportMedia(ctx, media.Frame{
+	client.pushUplinkFrame(ctx, media.Frame{
 		SessionID: client.id,
 		Direction: media.DirectionUplink,
 		Timestamp: time.Now(),
@@ -263,7 +263,7 @@ func (s *Server) unregisterClient(clientID string, err error) {
 		s.reportError(context.Background(), clientID, err)
 	}
 	if disconnected {
-		client.clearMediaSink()
+		client.clearDataInput()
 		client.closeDone()
 		if s.callbacks.OnDisconnect != nil {
 			s.callbacks.OnDisconnect(context.Background(), clientID, err)
@@ -314,17 +314,16 @@ func (client *clientConnector) Protocol() string { return "websocket" }
 // ID 返回客户端硬件 ID。
 func (client *clientConnector) ID() string { return client.id }
 
-// Start 启动客户端 Connector。
-// WebSocket 读取循环由 Server 在握手成功后直接驱动，Start 只绑定上行 sink。
-func (client *clientConnector) Start(ctx context.Context, sink media.Sink) error {
+// BindInput 绑定客户端收到上行数据后要推送到的 pipeline 输入端。
+func (client *clientConnector) BindInput(input media.Input) error {
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	client.mediaSink = sink
+	client.dataInput = input
 	return nil
 }
 
-// Consume 作为下行 sink，把 pipeline 输出的 JSON 帧写回 stream 连接。
-func (client *clientConnector) Consume(ctx context.Context, frame media.Frame) error {
+// SendData 把 pipeline 输出的 JSON 帧写回 stream 连接。
+func (client *clientConnector) SendData(ctx context.Context, frame media.Frame) error {
 	ch := client.streamConn()
 	if ch == nil {
 		return fmt.Errorf("client_id=%s stream channel not connected", client.id)
@@ -407,21 +406,21 @@ func (client *clientConnector) channels() []*channelConn {
 	return channels
 }
 
-// boundMediaSink 返回当前客户端绑定的上行媒体 sink。
-func (client *clientConnector) boundMediaSink() media.Sink {
+// boundDataInput 返回当前客户端绑定的 pipeline 输入端。
+func (client *clientConnector) boundDataInput() media.Input {
 	client.mu.RLock()
 	defer client.mu.RUnlock()
-	return client.mediaSink
+	return client.dataInput
 }
 
-// reportMedia 把上行媒体帧转交给绑定的媒体 sink。
-func (client *clientConnector) reportMedia(ctx context.Context, frame media.Frame) {
-	sink := client.boundMediaSink()
-	if sink == nil {
-		client.server.reportError(ctx, client.id, errors.New("websocket media sink not bound"))
+// pushUplinkFrame 把上行媒体帧转交给绑定的 pipeline 输入端。
+func (client *clientConnector) pushUplinkFrame(ctx context.Context, frame media.Frame) {
+	input := client.boundDataInput()
+	if input == nil {
+		client.server.reportError(ctx, client.id, errors.New("websocket data input not bound"))
 		return
 	}
-	if err := sink.Consume(ctx, frame); err != nil {
+	if err := input.Push(ctx, frame); err != nil {
 		client.server.reportError(ctx, client.id, err)
 	}
 }
@@ -435,11 +434,11 @@ func (s *Server) reportError(ctx context.Context, clientID string, err error) {
 	log.Errorf("client_id=%s websocket connector error: %v", clientID, err)
 }
 
-// clearMediaSink 清理客户端绑定的上行媒体 sink。
-func (client *clientConnector) clearMediaSink() {
+// clearDataInput 清理客户端绑定的 pipeline 输入端。
+func (client *clientConnector) clearDataInput() {
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	client.mediaSink = nil
+	client.dataInput = nil
 }
 
 // closeDone 关闭客户端 Connector 的 done channel，保证只关闭一次。

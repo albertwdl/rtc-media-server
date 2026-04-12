@@ -82,16 +82,36 @@ type Stats struct {
 	Errors    uint64
 }
 
-// Source 表示 pipeline 的输入端。
-// WebSocket、WebRTC 等客户端连接都可以作为上行 source。
-type Source interface {
-	Start(ctx context.Context, sink Sink) error
+// Input 表示 pipeline 的输入端。
+type Input interface {
+	Push(ctx context.Context, frame Frame) error
+}
+
+// InputFunc 允许用函数快速实现 Input。
+type InputFunc func(ctx context.Context, frame Frame) error
+
+// Push 调用函数型 Input 包装的推送函数。
+func (fn InputFunc) Push(ctx context.Context, frame Frame) error {
+	return fn(ctx, frame)
+}
+
+// Output 表示 pipeline 处理完成后的输出端。
+type Output interface {
+	SendData(ctx context.Context, frame Frame) error
+}
+
+// OutputFunc 允许用函数快速实现 Output。
+type OutputFunc func(ctx context.Context, frame Frame) error
+
+// SendData 调用函数型 Output 包装的发送函数。
+func (fn OutputFunc) SendData(ctx context.Context, frame Frame) error {
+	return fn(ctx, frame)
 }
 
 // Pipeline 定义媒体处理管线的最小抽象。
 type Pipeline interface {
+	Input
 	Start(ctx context.Context) error
-	Push(ctx context.Context, frame Frame) error
 	Close(ctx context.Context) error
 	Stats() Stats
 }
@@ -134,19 +154,6 @@ func (fn StageFunc) Process(ctx context.Context, frame Frame) (Frame, error) {
 // Close 关闭函数型 stage。
 func (fn StageFunc) Close(ctx context.Context) error {
 	return nil
-}
-
-// Sink 表示 pipeline 的终点。
-type Sink interface {
-	Consume(ctx context.Context, frame Frame) error
-}
-
-// SinkFunc 允许用函数快速实现 Sink。
-type SinkFunc func(ctx context.Context, frame Frame) error
-
-// Consume 调用函数型 sink 包装的消费函数。
-func (fn SinkFunc) Consume(ctx context.Context, frame Frame) error {
-	return fn(ctx, frame)
 }
 
 // DefaultPCM16Format 返回当前端侧协议使用的 PCM16 8k 单声道格式。
