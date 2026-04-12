@@ -2,44 +2,34 @@ package session
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
+	"rtc-media-server/internal/application"
+	"rtc-media-server/internal/audioenhancement"
 	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/controller"
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/pipeline"
+	"rtc-media-server/internal/pipeline/stages"
+	"rtc-media-server/internal/vad"
 )
 
-// Config 定义 Session 与双向 pipeline 的运行参数。
+// Config 定义 Session 管理和固定链路运行所需的参数。
 type Config struct {
 	UplinkQueueSize   int
 	DownlinkQueueSize int
 	CloseTimeout      time.Duration
 	TargetFormat      media.Format
 	Controller        controller.Config
-}
-
-// Dependencies 定义 Session 层依赖的处理 stage 和业务输出 sink。
-type Dependencies struct {
-	UplinkStages        []media.Stage
-	DownlinkStages      []media.Stage
-	NewUplinkStages     func(session *Session) ([]media.Stage, error)
-	NewDownlinkStages   func(session *Session) ([]media.Stage, error)
-	NewServiceConnector func(session *Session) (connector.ServiceConnector, error)
-	Logger              *slog.Logger
-	OnSession           func(session *Session)
-	OnEvent             func(session *Session, event media.Event)
-	OnError             func(session *Session, err error)
+	Logger            *slog.Logger
 }
 
 // Manager 管理所有业务 Session。
 type Manager struct {
-	cfg  Config
-	deps Dependencies
+	cfg Config
 
 	mu       sync.RWMutex
 	sessions map[string]*Session
@@ -65,31 +55,13 @@ type Session struct {
 	err error
 	rtt time.Duration
 	ok  bool
-
-	onEvent func(session *Session, event media.Event)
-	onError func(session *Session, err error)
 }
 
 // NewManager 创建业务 Session 管理器。
-func NewManager(cfg Config, deps Dependencies) *Manager {
-	if cfg.UplinkQueueSize <= 0 {
-		cfg.UplinkQueueSize = 32
-	}
-	if cfg.DownlinkQueueSize <= 0 {
-		cfg.DownlinkQueueSize = 32
-	}
-	if cfg.CloseTimeout <= 0 {
-		cfg.CloseTimeout = 3 * time.Second
-	}
-	if cfg.TargetFormat.Kind == "" {
-		cfg.TargetFormat = media.DefaultPCM16Format()
-	}
-	if deps.Logger == nil {
-		deps.Logger = slog.Default()
-	}
+func NewManager(cfg Config) *Manager {
+	cfg = normalizeConfig(cfg)
 	return &Manager{
 		cfg:      cfg,
-		deps:     deps,
 		sessions: make(map[string]*Session),
 	}
 }
@@ -105,8 +77,20 @@ func (m *Manager) Attach(ctx context.Context, client connector.ClientConnector) 
 		return existing, false, nil
 	}
 
+	s, err := NewSession(ctx, m.cfg, client)
+	if err != nil {
+		return nil, false, err
+	}
+
+	m.sessions[s.id] = s
+	return s, true, nil
+}
+
+// NewSession 根据客户端 Connector 创建并启动一个完整 Session。
+func NewSession(ctx context.Context, cfg Config, client connector.ClientConnector) (*Session, error) {
+	cfg = normalizeConfig(cfg)
 	sessionCtx, cancel := context.WithCancel(context.Background())
-	logger := m.deps.Logger.With(
+	logger := cfg.Logger.With(
 		slog.String("client_id", client.ID()),
 		slog.String("protocol", client.Protocol()),
 	)
@@ -117,81 +101,111 @@ func (m *Manager) Attach(ctx context.Context, client connector.ClientConnector) 
 		ctx:             sessionCtx,
 		cancel:          cancel,
 		done:            make(chan struct{}),
-		onEvent:         m.deps.OnEvent,
-		onError:         m.deps.OnError,
 	}
 
-	service, err := m.serviceConnectorFor(s)
-	if err != nil {
-		cancel()
-		return nil, false, err
-	}
+	service := application.NewMockConnector(s.ID(), s.Logger())
 	s.serviceConnector = service
 	cleanup := func(reason string) {
 		cancel()
+		if s.controller != nil {
+			_ = s.controller.Close(ctx)
+		}
 		if s.uplink != nil {
 			_ = s.uplink.Close(ctx)
 		}
 		if s.downlink != nil {
 			_ = s.downlink.Close(ctx)
 		}
-		if s.controller != nil {
-			_ = s.controller.Close(ctx)
-		}
 		_ = service.Close(ctx, reason)
 	}
 
-	ctrl, err := m.controllerFor(s)
-	if err != nil {
-		cleanup("create controller failed")
-		return nil, false, err
-	}
-	s.controller = ctrl
+	s.controller = controller.New(cfg.Controller, controller.Dependencies{
+		SessionID: s.id,
+		Logger:    s.logger,
+		CloseSession: func(ctx context.Context, reason string) error {
+			return s.Close(ctx, reason)
+		},
+	})
 
-	uplinkStages, err := m.uplinkStagesFor(s)
+	engine, err := audioenhancement.NewMockEngine("", s.Logger())
 	if err != nil {
-		cleanup("create uplink stages failed")
-		return nil, false, err
+		cleanup("create audio enhancement failed")
+		return nil, err
 	}
-	downlinkStages, err := m.downlinkStagesFor(s)
-	if err != nil {
-		cleanup("create downlink stages failed")
-		return nil, false, err
+	s.controller.RegisterReferenceConsumer(engine.Name(), engine)
+	vadStage := vad.NewMockStageWithTimeouts(
+		s.Logger(),
+		s.Controller().InitialSilenceTimeout(),
+		s.Controller().SilenceTimeout(),
+	)
+	vadStage.SetEventEmitter(s.Controller().Emit)
+
+	uplinkStages := []media.Stage{
+		stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event media.Event) {
+			s.OnEvent(ctx, event)
+		}),
+		stages.NewBase64Decode(),
+		stages.NewALawDecode(cfg.TargetFormat),
+		engine,
+		vadStage,
+	}
+	downlinkStages := []media.Stage{
+		stages.NewPCM16Normalizer(cfg.TargetFormat),
+		stages.NewReferenceTap(s.Controller().OnDownlinkReference),
+		stages.NewALawEncode(),
+		stages.NewBase64Encode(),
+		stages.NewWebSocketJSONPack(),
 	}
 
-	s.uplink = s.newPipeline("uplink", m.cfg.UplinkQueueSize, uplinkStages, service)
-	s.downlink = s.newPipeline("downlink", m.cfg.DownlinkQueueSize, downlinkStages, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
+	s.uplink = s.newPipeline("uplink", cfg.UplinkQueueSize, uplinkStages, service)
+	s.downlink = s.newPipeline("downlink", cfg.DownlinkQueueSize, downlinkStages, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
 		return client.Consume(ctx, frame)
 	}))
 
 	if err := s.uplink.Start(sessionCtx); err != nil {
 		cleanup("start uplink failed")
-		return nil, false, err
+		return nil, err
 	}
 	if err := s.downlink.Start(sessionCtx); err != nil {
 		cleanup("start downlink failed")
-		return nil, false, err
+		return nil, err
 	}
 	if err := service.Start(sessionCtx, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
 		return s.EnqueueDownlink(ctx, frame)
 	})); err != nil {
 		cleanup("start service connector failed")
-		return nil, false, err
+		return nil, err
 	}
 	if err := client.Start(sessionCtx, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
 		s.OnMedia(ctx, frame)
 		return nil
 	})); err != nil {
 		cleanup("start client connector failed")
-		return nil, false, err
+		return nil, err
 	}
 
-	m.sessions[s.id] = s
-	if m.deps.OnSession != nil {
-		m.deps.OnSession(s)
-	}
 	logger.Info("client_id=" + s.id + " session created")
-	return s, true, nil
+	return s, nil
+}
+
+// normalizeConfig 填充 Session 运行参数的默认值。
+func normalizeConfig(cfg Config) Config {
+	if cfg.UplinkQueueSize <= 0 {
+		cfg.UplinkQueueSize = 32
+	}
+	if cfg.DownlinkQueueSize <= 0 {
+		cfg.DownlinkQueueSize = 32
+	}
+	if cfg.CloseTimeout <= 0 {
+		cfg.CloseTimeout = 3 * time.Second
+	}
+	if cfg.TargetFormat.Kind == "" {
+		cfg.TargetFormat = media.DefaultPCM16Format()
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
+	return cfg
 }
 
 // newPipeline 创建带 Session 错误回调的队列 pipeline。
@@ -201,42 +215,6 @@ func (s *Session) newPipeline(name string, queueSize int, stages []media.Stage, 
 		s.OnError(ctx, fmt.Errorf("%s pipeline: %w", name, err))
 	})
 	return p
-}
-
-// serviceConnectorFor 为 Session 创建必需的服务侧 Connector。
-func (m *Manager) serviceConnectorFor(s *Session) (connector.ServiceConnector, error) {
-	if m.deps.NewServiceConnector == nil {
-		return nil, errors.New("session NewServiceConnector is required")
-	}
-	return m.deps.NewServiceConnector(s)
-}
-
-// controllerFor 为 Session 创建独立 Controller。
-func (m *Manager) controllerFor(s *Session) (*controller.Controller, error) {
-	deps := controller.Dependencies{
-		SessionID: s.id,
-		Logger:    s.logger,
-		CloseSession: func(ctx context.Context, reason string) error {
-			return s.Close(ctx, reason)
-		},
-	}
-	return controller.New(m.cfg.Controller, deps), nil
-}
-
-// uplinkStagesFor 为 Session 创建独立的上行 stage chain。
-func (m *Manager) uplinkStagesFor(s *Session) ([]media.Stage, error) {
-	if m.deps.NewUplinkStages != nil {
-		return m.deps.NewUplinkStages(s)
-	}
-	return append([]media.Stage(nil), m.deps.UplinkStages...), nil
-}
-
-// downlinkStagesFor 为 Session 创建独立的下行 stage chain。
-func (m *Manager) downlinkStagesFor(s *Session) ([]media.Stage, error) {
-	if m.deps.NewDownlinkStages != nil {
-		return m.deps.NewDownlinkStages(s)
-	}
-	return append([]media.Stage(nil), m.deps.DownlinkStages...), nil
 }
 
 // Remove 关闭并移除指定 Session。
@@ -255,12 +233,13 @@ func (m *Manager) Remove(ctx context.Context, id string, err error) {
 
 // Close 关闭所有 Session。
 func (m *Manager) Close(ctx context.Context) error {
-	m.mu.RLock()
+	m.mu.Lock()
 	sessions := make([]*Session, 0, len(m.sessions))
-	for _, s := range m.sessions {
+	for id, s := range m.sessions {
 		sessions = append(sessions, s)
+		delete(m.sessions, id)
 	}
-	m.mu.RUnlock()
+	m.mu.Unlock()
 
 	for _, s := range sessions {
 		if err := s.Close(ctx, "manager closed"); err != nil {
@@ -350,8 +329,12 @@ func (s *Session) Close(ctx context.Context, reason string) error {
 		if s.controller != nil {
 			_ = s.controller.Close(ctx)
 		}
-		_ = s.uplink.Close(ctx)
-		_ = s.downlink.Close(ctx)
+		if s.uplink != nil {
+			_ = s.uplink.Close(ctx)
+		}
+		if s.downlink != nil {
+			_ = s.downlink.Close(ctx)
+		}
 		if s.serviceConnector != nil {
 			_ = s.serviceConnector.Close(ctx, reason)
 		}
@@ -379,17 +362,11 @@ func (s *Session) OnMedia(ctx context.Context, frame media.Frame) {
 // OnEvent 接收 Connector 或协议适配 stage 上报的非媒体事件。
 func (s *Session) OnEvent(ctx context.Context, event media.Event) {
 	s.logger.Info("client_id="+s.id+" connector event", slog.String("event_type", event.Type), slog.Int("bytes", len(event.Raw)))
-	if s.onEvent != nil {
-		s.onEvent(s, event)
-	}
 }
 
-// OnError 记录并转发 Session 范围内的错误。
+// OnError 记录 Session 范围内的错误。
 func (s *Session) OnError(ctx context.Context, err error) {
 	s.logger.Error("client_id="+s.id+" session error", slog.Any("error", err))
-	if s.onError != nil {
-		s.onError(s, err)
-	}
 }
 
 // setErr 记录 Session 的最终错误状态。

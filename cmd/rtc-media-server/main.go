@@ -18,13 +18,9 @@ import (
 	"syscall"
 	"time"
 
-	"rtc-media-server/internal/application"
-	"rtc-media-server/internal/audioenhancement"
 	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/media"
-	"rtc-media-server/internal/pipeline/stages"
 	"rtc-media-server/internal/session"
-	"rtc-media-server/internal/vad"
 	"rtc-media-server/internal/websocket"
 )
 
@@ -48,45 +44,7 @@ func main() {
 		DownlinkQueueSize: 32,
 		CloseTimeout:      3 * time.Second,
 		TargetFormat:      media.DefaultPCM16Format(),
-	}, session.Dependencies{
-		Logger: logger,
-		NewServiceConnector: func(sess *session.Session) (connector.ServiceConnector, error) {
-			return application.NewMockConnector(sess.ID(), sess.Logger()), nil
-		},
-		NewUplinkStages: func(sess *session.Session) ([]media.Stage, error) {
-			engine, err := audioenhancement.NewMockEngine("", sess.Logger())
-			if err != nil {
-				return nil, err
-			}
-			sess.Controller().RegisterReferenceConsumer(engine.Name(), engine)
-			vadStage := vad.NewMockStageWithTimeouts(
-				sess.Logger(),
-				sess.Controller().InitialSilenceTimeout(),
-				sess.Controller().SilenceTimeout(),
-			)
-			vadStage.SetEventEmitter(sess.Controller().Emit)
-			return []media.Stage{
-				stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event media.Event) {
-					sess.OnEvent(ctx, event)
-				}),
-				stages.NewBase64Decode(),
-				stages.NewALawDecode(media.DefaultPCM16Format()),
-				engine,
-				vadStage,
-			}, nil
-		},
-		NewDownlinkStages: func(sess *session.Session) ([]media.Stage, error) {
-			return []media.Stage{
-				stages.NewPCM16Normalizer(media.DefaultPCM16Format()),
-				stages.NewReferenceTap(sess.Controller().OnDownlinkReference),
-				stages.NewALawEncode(),
-				stages.NewBase64Encode(),
-				stages.NewWebSocketJSONPack(),
-			}, nil
-		},
-		OnSession: func(sess *session.Session) {
-			sess.Logger().Info("client_id=" + sess.ID() + " session ready")
-		},
+		Logger:            logger,
 	})
 
 	server, err := websocket.NewServer(cfg, websocket.Callbacks{

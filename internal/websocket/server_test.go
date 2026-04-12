@@ -17,7 +17,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,114 +25,84 @@ import (
 
 	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/media"
-	"rtc-media-server/internal/pipeline/stages"
 	"rtc-media-server/internal/session"
 )
 
 // TestStreamAppendJSONEntersSessionUplink 验证 stream append JSON 会进入 Session 上行 pipeline。
 func TestStreamAppendJSONEntersSessionUplink(t *testing.T) {
-	frameCh := make(chan media.Frame, 1)
-	_, url, _ := newTestTLSServer(t, session.Dependencies{
-		NewServiceConnector: newCapturingServiceConnector(frameCh),
+	sessionCh := make(chan *session.Session, 1)
+	_, url, _ := newTestTLSServer(t, func(sess *session.Session) {
+		sessionCh <- sess
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-a")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
+	sess := waitForSession(t, ctx, sessionCh)
 
 	alaw := []byte{0xD5, 0x55}
 	if err := conn.Write(ctx, coderws.MessageText, streamAppendJSON(t, alaw)); err != nil {
 		t.Fatalf("write stream: %v", err)
 	}
 
-	select {
-	case frame := <-frameCh:
-		if frame.SessionID != "client-a" {
-			t.Fatalf("SessionID = %q", frame.SessionID)
-		}
-		if frame.Direction != media.DirectionUplink {
-			t.Fatalf("Direction = %q", frame.Direction)
-		}
-		if frame.Format.Codec != media.CodecPCM16LE {
-			t.Fatalf("Codec = %q", frame.Format.Codec)
-		}
-		if len(frame.Payload) != len(alaw)*2 {
-			t.Fatalf("pcm len = %d", len(frame.Payload))
-		}
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for uplink frame")
-	}
+	waitForServiceCount(t, ctx, sess, 1)
 }
 
-// TestNonAppendStreamJSONDoesNotEmitMedia 验证非 append 事件只上报事件不输出媒体帧。
+// TestNonAppendStreamJSONDoesNotEmitMedia 验证非 append 事件不会进入媒体处理终点。
 func TestNonAppendStreamJSONDoesNotEmitMedia(t *testing.T) {
-	frameCh := make(chan media.Frame, 1)
-	eventCh := make(chan string, 1)
-	_, url, _ := newTestTLSServer(t, session.Dependencies{
-		NewServiceConnector: newCapturingServiceConnector(frameCh),
-		OnEvent: func(_ *session.Session, event media.Event) {
-			eventCh <- event.Type
-		},
+	sessionCh := make(chan *session.Session, 1)
+	_, url, _ := newTestTLSServer(t, func(sess *session.Session) {
+		sessionCh <- sess
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-b")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
+	sess := waitForSession(t, ctx, sessionCh)
 
 	if err := conn.Write(ctx, coderws.MessageText, []byte(`{"type":"input_audio_buffer.commit"}`)); err != nil {
 		t.Fatalf("write stream: %v", err)
 	}
-	select {
-	case got := <-eventCh:
-		if got != "input_audio_buffer.commit" {
-			t.Fatalf("event type = %q", got)
-		}
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for stream event")
-	}
-	select {
-	case <-frameCh:
-		t.Fatal("unexpected media frame")
-	case <-time.After(100 * time.Millisecond):
+	time.Sleep(100 * time.Millisecond)
+	if got := serviceCount(t, sess); got != 0 {
+		t.Fatalf("service count = %d", got)
 	}
 }
 
-// TestInvalidStreamJSONReportsError 验证非法 stream JSON 会触发错误回调。
-func TestInvalidStreamJSONReportsError(t *testing.T) {
-	errCh := make(chan error, 1)
-	_, url, _ := newTestTLSServer(t, session.Dependencies{
-		OnError: func(_ *session.Session, err error) {
-			errCh <- err
-		},
+// TestInvalidStreamJSONDoesNotBreakSession 验证非法 stream JSON 不会进入媒体终点，且 Session 可继续处理后续帧。
+func TestInvalidStreamJSONDoesNotBreakSession(t *testing.T) {
+	sessionCh := make(chan *session.Session, 1)
+	_, url, _ := newTestTLSServer(t, func(sess *session.Session) {
+		sessionCh <- sess
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-c")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
+	sess := waitForSession(t, ctx, sessionCh)
 
 	if err := conn.Write(ctx, coderws.MessageText, []byte("not-json")); err != nil {
 		t.Fatalf("write stream: %v", err)
 	}
-	select {
-	case err := <-errCh:
-		if err == nil {
-			t.Fatal("expected error")
-		}
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for error callback")
+	time.Sleep(100 * time.Millisecond)
+	if got := serviceCount(t, sess); got != 0 {
+		t.Fatalf("service count after invalid json = %d", got)
 	}
+
+	if err := conn.Write(ctx, coderws.MessageText, streamAppendJSON(t, []byte{0xD5})); err != nil {
+		t.Fatalf("write valid stream: %v", err)
+	}
+	waitForServiceCount(t, ctx, sess, 1)
 }
 
 // TestDownlinkPipelineSendsResponseAudioDelta 验证下行 PCM 会发送 response.audio.delta。
 func TestDownlinkPipelineSendsResponseAudioDelta(t *testing.T) {
 	sessionCh := make(chan *session.Session, 1)
-	_, url, _ := newTestTLSServer(t, session.Dependencies{
-		OnSession: func(session *session.Session) {
-			sessionCh <- session
-		},
+	_, url, _ := newTestTLSServer(t, func(sess *session.Session) {
+		sessionCh <- sess
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -141,12 +110,7 @@ func TestDownlinkPipelineSendsResponseAudioDelta(t *testing.T) {
 	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-d")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
 
-	var sess *session.Session
-	select {
-	case sess = <-sessionCh:
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for session")
-	}
+	sess := waitForSession(t, ctx, sessionCh)
 
 	pcm := []byte{0x00, 0x00, 0x00, 0x01}
 	if err := sess.EnqueueDownlink(ctx, media.Frame{Payload: pcm, Format: media.DefaultPCM16Format()}); err != nil {
@@ -178,7 +142,7 @@ func TestDownlinkPipelineSendsResponseAudioDelta(t *testing.T) {
 
 // TestMissingClientIDRejected 验证缺少客户端 ID Header 时拒绝建联。
 func TestMissingClientIDRejected(t *testing.T) {
-	_, url, client := newTestTLSServer(t, session.Dependencies{})
+	_, url, client := newTestTLSServer(t, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -195,7 +159,7 @@ func TestMissingClientIDRejected(t *testing.T) {
 
 // TestDuplicateChannelRejected 验证同一客户端重复 stream 建联会被拒绝。
 func TestDuplicateChannelRejected(t *testing.T) {
-	_, url, client := newTestTLSServer(t, session.Dependencies{})
+	_, url, client := newTestTLSServer(t, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -219,10 +183,8 @@ func TestDuplicateChannelRejected(t *testing.T) {
 // TestRTTUsesStreamChannel 验证 RTT 通过 stream channel 测量并缓存。
 func TestRTTUsesStreamChannel(t *testing.T) {
 	sessionCh := make(chan *session.Session, 1)
-	_, url, _ := newTestTLSServer(t, session.Dependencies{
-		OnSession: func(session *session.Session) {
-			sessionCh <- session
-		},
+	_, url, _ := newTestTLSServer(t, func(sess *session.Session) {
+		sessionCh <- sess
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -230,12 +192,7 @@ func TestRTTUsesStreamChannel(t *testing.T) {
 	streamConn := dialTestWS(t, ctx, url+"/v1/stream", "client-g")
 	defer streamConn.Close(coderws.StatusNormalClosure, "test done")
 
-	var sess *session.Session
-	select {
-	case sess = <-sessionCh:
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for session")
-	}
+	sess := waitForSession(t, ctx, sessionCh)
 	readCtx, readCancel := context.WithCancel(context.Background())
 	defer readCancel()
 	go func() {
@@ -299,7 +256,7 @@ func TestOnConnectErrorRejectsConnection(t *testing.T) {
 // TestDisconnectCallback 验证 stream 连接断开会触发 OnDisconnect。
 func TestDisconnectCallback(t *testing.T) {
 	disconnectedCh := make(chan string, 1)
-	_, url, _ := newTestTLSServer(t, session.Dependencies{}, func(callbacks *Callbacks) {
+	_, url, _ := newTestTLSServer(t, nil, func(callbacks *Callbacks) {
 		callbacks.OnDisconnect = func(ctx context.Context, clientID string, err error) {
 			disconnectedCh <- clientID
 		}
@@ -338,8 +295,8 @@ func streamAppendJSON(t *testing.T, alaw []byte) []byte {
 	return payload
 }
 
-// newTestTLSServer 创建使用自签证书的 WebSocket 测试服务。
-func newTestTLSServer(t *testing.T, deps session.Dependencies, opts ...func(*Callbacks)) (*Server, string, *http.Client) {
+// newTestTLSServer 创建使用自签证书和真实 Session 链路的 WebSocket 测试服务。
+func newTestTLSServer(t *testing.T, onSession func(*session.Session), callbackOpts ...func(*Callbacks)) (*Server, string, *http.Client) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -347,39 +304,17 @@ func newTestTLSServer(t *testing.T, deps session.Dependencies, opts ...func(*Cal
 	cfg := DefaultConfig()
 	cfg.TLS.CertFile = cert
 	cfg.TLS.KeyFile = key
-	if deps.NewUplinkStages == nil {
-		deps.NewUplinkStages = func(sess *session.Session) ([]media.Stage, error) {
-			return []media.Stage{
-				stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event media.Event) {
-					sess.OnEvent(ctx, event)
-				}),
-				stages.NewBase64Decode(),
-				stages.NewALawDecode(media.DefaultPCM16Format()),
-			}, nil
-		}
-	}
-	if deps.NewDownlinkStages == nil {
-		deps.NewDownlinkStages = func(sess *session.Session) ([]media.Stage, error) {
-			return []media.Stage{
-				stages.NewPCM16Normalizer(media.DefaultPCM16Format()),
-				stages.NewALawEncode(),
-				stages.NewBase64Encode(),
-				stages.NewWebSocketJSONPack(),
-			}, nil
-		}
-	}
-	if deps.NewServiceConnector == nil {
-		deps.NewServiceConnector = newCapturingServiceConnector(make(chan media.Frame, 1))
-	}
-
 	manager := session.NewManager(session.Config{
 		UplinkQueueSize:   8,
 		DownlinkQueueSize: 8,
 		TargetFormat:      media.DefaultPCM16Format(),
-	}, deps)
+	})
 	callbacks := Callbacks{
 		OnConnect: func(ctx context.Context, client connector.ClientConnector) error {
-			_, _, err := manager.Attach(ctx, client)
+			sess, _, err := manager.Attach(ctx, client)
+			if err == nil && onSession != nil {
+				onSession(sess)
+			}
 			return err
 		},
 		OnDisconnect: func(ctx context.Context, clientID string, err error) {
@@ -391,7 +326,7 @@ func newTestTLSServer(t *testing.T, deps session.Dependencies, opts ...func(*Cal
 			}
 		},
 	}
-	for _, opt := range opts {
+	for _, opt := range callbackOpts {
 		opt(&callbacks)
 	}
 	server, err := NewServer(cfg, callbacks, nil)
@@ -423,48 +358,44 @@ func newBareTestTLSServer(t *testing.T, callbacks Callbacks) (Config, string, *h
 	return cfg, "wss" + ts.URL[len("https"):], ts.Client()
 }
 
-// newCapturingServiceConnector 创建捕获上行帧的服务侧 Connector 工厂。
-func newCapturingServiceConnector(frameCh chan<- media.Frame) func(*session.Session) (connector.ServiceConnector, error) {
-	return func(sess *session.Session) (connector.ServiceConnector, error) {
-		return &capturingServiceConnector{
-			id:      sess.ID(),
-			frameCh: frameCh,
-			done:    make(chan struct{}),
-		}, nil
+// waitForSession 等待测试 WebSocket 建联后创建出的 Session。
+func waitForSession(t *testing.T, ctx context.Context, sessionCh <-chan *session.Session) *session.Session {
+	t.Helper()
+	select {
+	case sess := <-sessionCh:
+		return sess
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for session")
+	}
+	return nil
+}
+
+// serviceCount 返回真实 mock service connector 已消费的上行帧数量。
+func serviceCount(t *testing.T, sess *session.Session) uint64 {
+	t.Helper()
+	counter, ok := sess.ServiceConnector().(interface{ Count() uint64 })
+	if !ok {
+		t.Fatalf("service connector %T does not expose Count", sess.ServiceConnector())
+	}
+	return counter.Count()
+}
+
+// waitForServiceCount 等待真实 mock service connector 消费到指定帧数。
+func waitForServiceCount(t *testing.T, ctx context.Context, sess *session.Session, want uint64) {
+	t.Helper()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if got := serviceCount(t, sess); got >= want {
+			return
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for service count %d, got %d", want, serviceCount(t, sess))
+		}
 	}
 }
-
-// capturingServiceConnector 是测试用服务侧 Connector。
-type capturingServiceConnector struct {
-	id      string
-	frameCh chan<- media.Frame
-	done    chan struct{}
-	once    sync.Once
-}
-
-// ID 返回测试服务侧 Connector ID。
-func (c *capturingServiceConnector) ID() string { return c.id }
-
-// Protocol 返回测试服务侧 Connector 协议名称。
-func (c *capturingServiceConnector) Protocol() string { return "capturing_service" }
-
-// Start 绑定测试服务侧 Connector 的下行 sink。
-func (c *capturingServiceConnector) Start(ctx context.Context, downlink media.Sink) error { return nil }
-
-// Consume 捕获上行 pipeline 输出的媒体帧。
-func (c *capturingServiceConnector) Consume(ctx context.Context, frame media.Frame) error {
-	c.frameCh <- frame
-	return nil
-}
-
-// Close 关闭测试服务侧 Connector。
-func (c *capturingServiceConnector) Close(ctx context.Context, reason string) error {
-	c.once.Do(func() { close(c.done) })
-	return nil
-}
-
-// Done 返回测试服务侧 Connector 关闭通知。
-func (c *capturingServiceConnector) Done() <-chan struct{} { return c.done }
 
 // dialTestWS 建立带客户端 ID Header 的测试 WebSocket 连接。
 func dialTestWS(t *testing.T, ctx context.Context, url string, clientID string) *coderws.Conn {
