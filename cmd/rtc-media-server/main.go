@@ -24,7 +24,7 @@ import (
 	"rtc-media-server/internal/websocket"
 )
 
-const configPath = "configs/config.yaml"
+const configPath = "configs/websocket.yaml"
 
 // main 组装 demo 运行所需的配置、SessionManager 和 WebSocket 服务。
 func main() {

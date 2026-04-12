@@ -60,7 +60,7 @@ func DefaultConfig() Config {
 }
 
 // LoadConfig 从 YAML 文件加载 websocket 配置。
-// path 为空时会依次尝试 configs/config.yaml 和 configs/config.yml。
+// path 为空时会依次尝试 configs/websocket.yaml 和 configs/websocket.yml。
 func LoadConfig(path string) (Config, error) {
 	if path == "" {
 		var err error
@@ -90,14 +90,14 @@ func LoadConfig(path string) (Config, error) {
 // defaultConfigPath 查找默认配置文件路径。
 func defaultConfigPath() (string, error) {
 	for _, path := range []string{
-		filepath.Join("configs", "config.yaml"),
-		filepath.Join("configs", "config.yml"),
+		filepath.Join("configs", "websocket.yaml"),
+		filepath.Join("configs", "websocket.yml"),
 	} {
 		if _, err := os.Stat(path); err == nil {
 			return path, nil
 		}
 	}
-	return "", errors.New("websocket config not found: tried configs/config.yaml and configs/config.yml")
+	return "", errors.New("websocket config not found: tried configs/websocket.yaml and configs/websocket.yml")
 }
 
 // validateConfig 校验 WebSocket 运行配置的必填项和取值范围。

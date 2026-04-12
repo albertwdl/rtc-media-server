@@ -19,7 +19,7 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	configPath := filepath.Join(dir, "config.yaml")
+	configPath := filepath.Join(dir, "websocket.yaml")
 	data := []byte(`
 websocket:
   listen: "127.0.0.1"
