@@ -32,7 +32,7 @@ type Dependencies struct {
 	NewServiceConnector func(session *Session) (connector.ServiceConnector, error)
 	Logger              *slog.Logger
 	OnSession           func(session *Session)
-	OnEvent             func(session *Session, event connector.Event)
+	OnEvent             func(session *Session, event media.Event)
 	OnError             func(session *Session, err error)
 }
 
@@ -66,7 +66,7 @@ type Session struct {
 	rtt time.Duration
 	ok  bool
 
-	onEvent func(session *Session, event connector.Event)
+	onEvent func(session *Session, event media.Event)
 	onError func(session *Session, err error)
 }
 
@@ -214,10 +214,8 @@ func (m *Manager) serviceConnectorFor(s *Session) (connector.ServiceConnector, e
 // controllerFor 为 Session 创建独立 Controller。
 func (m *Manager) controllerFor(s *Session) (*controller.Controller, error) {
 	deps := controller.Dependencies{
-		SessionID:        s.id,
-		ClientConnector:  s.clientConnector,
-		ServiceConnector: s.serviceConnector,
-		Logger:           s.logger,
+		SessionID: s.id,
+		Logger:    s.logger,
 		CloseSession: func(ctx context.Context, reason string) error {
 			return s.Close(ctx, reason)
 		},
@@ -379,7 +377,7 @@ func (s *Session) OnMedia(ctx context.Context, frame media.Frame) {
 }
 
 // OnEvent 接收 Connector 或协议适配 stage 上报的非媒体事件。
-func (s *Session) OnEvent(ctx context.Context, event connector.Event) {
+func (s *Session) OnEvent(ctx context.Context, event media.Event) {
 	s.logger.Info("client_id="+s.id+" connector event", slog.String("event_type", event.Type), slog.Int("bytes", len(event.Raw)))
 	if s.onEvent != nil {
 		s.onEvent(s, event)

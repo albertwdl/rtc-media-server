@@ -7,14 +7,6 @@ import (
 	"rtc-media-server/internal/media"
 )
 
-// Event 表示 Connector 或协议适配 stage 上报的非媒体事件。
-// Raw 保留原始业务 payload，Fields 用于传递已经解析出的关键字段。
-type Event struct {
-	Type   string
-	Raw    []byte
-	Fields map[string]string
-}
-
 // ClientConnector 表示某个客户端的一条双向连接能力。
 // 它不是全局监听器，而是 Session 持有的客户端连接抽象。
 type ClientConnector interface {

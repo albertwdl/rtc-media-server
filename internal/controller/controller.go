@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/media"
 )
 
@@ -21,13 +20,11 @@ type Config struct {
 	ReferenceQueueSize    int
 }
 
-// Dependencies 定义 Controller 操作 Session 和 Connector 所需的外部能力。
+// Dependencies 定义 Controller 操作 Session 所需的外部能力。
 type Dependencies struct {
-	SessionID        string
-	ClientConnector  connector.ClientConnector
-	ServiceConnector connector.ServiceConnector
-	Logger           *slog.Logger
-	CloseSession     func(ctx context.Context, reason string) error
+	SessionID    string
+	Logger       *slog.Logger
+	CloseSession func(ctx context.Context, reason string) error
 }
 
 // Controller 负责处理跨管线事件、下行参考信号和资源协调。

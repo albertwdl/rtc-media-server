@@ -7,15 +7,14 @@ import (
 	"errors"
 	"testing"
 
-	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/pipeline"
 )
 
 // TestWebSocketJSONUnpackAppend 验证 append 事件会被解包为 base64 音频帧。
 func TestWebSocketJSONUnpackAppend(t *testing.T) {
-	eventCh := make(chan connector.Event, 1)
-	stage := NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event connector.Event) {
+	eventCh := make(chan media.Event, 1)
+	stage := NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event media.Event) {
 		eventCh <- event
 	})
 	audio := base64.StdEncoding.EncodeToString([]byte{0xD5})

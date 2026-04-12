@@ -50,24 +50,24 @@ func main() {
 		TargetFormat:      media.DefaultPCM16Format(),
 	}, session.Dependencies{
 		Logger: logger,
-		NewServiceConnector: func(session *session.Session) (connector.ServiceConnector, error) {
-			return application.NewMockConnector(session.ID(), session.Logger()), nil
+		NewServiceConnector: func(sess *session.Session) (connector.ServiceConnector, error) {
+			return application.NewMockConnector(sess.ID(), sess.Logger()), nil
 		},
-		NewUplinkStages: func(session *session.Session) ([]media.Stage, error) {
-			engine, err := audioenhancement.NewMockEngine("", session.Logger())
+		NewUplinkStages: func(sess *session.Session) ([]media.Stage, error) {
+			engine, err := audioenhancement.NewMockEngine("", sess.Logger())
 			if err != nil {
 				return nil, err
 			}
-			session.Controller().RegisterReferenceConsumer(engine.Name(), engine)
+			sess.Controller().RegisterReferenceConsumer(engine.Name(), engine)
 			vadStage := vad.NewMockStageWithTimeouts(
-				session.Logger(),
-				session.Controller().InitialSilenceTimeout(),
-				session.Controller().SilenceTimeout(),
+				sess.Logger(),
+				sess.Controller().InitialSilenceTimeout(),
+				sess.Controller().SilenceTimeout(),
 			)
-			vadStage.SetEventEmitter(session.Controller().Emit)
+			vadStage.SetEventEmitter(sess.Controller().Emit)
 			return []media.Stage{
-				stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event connector.Event) {
-					session.OnEvent(ctx, event)
+				stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event media.Event) {
+					sess.OnEvent(ctx, event)
 				}),
 				stages.NewBase64Decode(),
 				stages.NewALawDecode(media.DefaultPCM16Format()),
@@ -75,21 +75,40 @@ func main() {
 				vadStage,
 			}, nil
 		},
-		NewDownlinkStages: func(session *session.Session) ([]media.Stage, error) {
+		NewDownlinkStages: func(sess *session.Session) ([]media.Stage, error) {
 			return []media.Stage{
 				stages.NewPCM16Normalizer(media.DefaultPCM16Format()),
-				stages.NewReferenceTap(session.Controller().OnDownlinkReference),
+				stages.NewReferenceTap(sess.Controller().OnDownlinkReference),
 				stages.NewALawEncode(),
 				stages.NewBase64Encode(),
 				stages.NewWebSocketJSONPack(),
 			}, nil
 		},
-		OnSession: func(session *session.Session) {
-			session.Logger().Info("client_id=" + session.ID() + " session ready")
+		OnSession: func(sess *session.Session) {
+			sess.Logger().Info("client_id=" + sess.ID() + " session ready")
 		},
 	})
 
-	server, err := websocket.NewServer(cfg, sessionManager, logger)
+	server, err := websocket.NewServer(cfg, websocket.Callbacks{
+		OnConnect: func(ctx context.Context, client connector.ClientConnector) error {
+			_, _, err := sessionManager.Attach(ctx, client)
+			return err
+		},
+		OnDisconnect: func(ctx context.Context, clientID string, err error) {
+			sessionManager.Remove(ctx, clientID, err)
+		},
+		OnError: func(ctx context.Context, clientID string, err error) {
+			if sess, ok := sessionManager.Get(clientID); ok {
+				sess.OnError(ctx, err)
+				return
+			}
+			logger.Error(
+				"client_id="+clientID+" websocket error",
+				slog.String("client_id", clientID),
+				slog.Any("error", err),
+			)
+		},
+	}, logger)
 	if err != nil {
 		fatal(logger, "创建 WebSocket 服务失败", err)
 	}

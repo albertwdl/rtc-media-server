@@ -44,6 +44,14 @@ type Frame struct {
 	Metadata  map[string]string
 }
 
+// Event 表示协议适配 stage 上报的非媒体事件。
+// Raw 保留原始业务 payload，Fields 用于传递已经解析出的关键字段。
+type Event struct {
+	Type   string
+	Raw    []byte
+	Fields map[string]string
+}
+
 // StageEvent 表示 stage 抛出的控制事件。
 // 事件由 Controller 统一仲裁，stage 不应直接操作 Connector。
 type StageEvent struct {

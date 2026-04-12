@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -71,7 +72,7 @@ func TestNonAppendStreamJSONDoesNotEmitMedia(t *testing.T) {
 	eventCh := make(chan string, 1)
 	_, url, _ := newTestTLSServer(t, session.Dependencies{
 		NewServiceConnector: newCapturingServiceConnector(frameCh),
-		OnEvent: func(_ *session.Session, event connector.Event) {
+		OnEvent: func(_ *session.Session, event media.Event) {
 			eventCh <- event.Type
 		},
 	})
@@ -259,6 +260,68 @@ func TestRTTUsesStreamChannel(t *testing.T) {
 	}
 }
 
+// TestOnConnectErrorRejectsConnection 验证 OnConnect 返回错误时连接会被关闭并清理。
+func TestOnConnectErrorRejectsConnection(t *testing.T) {
+	var attempts atomic.Int32
+	cfg, url, client := newBareTestTLSServer(t, Callbacks{
+		OnConnect: func(ctx context.Context, client connector.ClientConnector) error {
+			if attempts.Add(1) == 1 {
+				return errors.New("attach failed")
+			}
+			return client.Start(ctx, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
+				return nil
+			}))
+		},
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	headers := http.Header{}
+	headers.Set(cfg.ClientIDHeader, "client-h")
+	conn, _, err := coderws.Dial(ctx, url+cfg.StreamPath, &coderws.DialOptions{
+		HTTPClient: client,
+		HTTPHeader: headers,
+	})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close(coderws.StatusNormalClosure, "test done")
+
+	_, _, err = conn.Read(ctx)
+	if err == nil {
+		t.Fatal("expected connection close after OnConnect error")
+	}
+
+	conn = dialTestWS(t, ctx, url+cfg.StreamPath, "client-h")
+	defer conn.Close(coderws.StatusNormalClosure, "test done")
+}
+
+// TestDisconnectCallback 验证 stream 连接断开会触发 OnDisconnect。
+func TestDisconnectCallback(t *testing.T) {
+	disconnectedCh := make(chan string, 1)
+	_, url, _ := newTestTLSServer(t, session.Dependencies{}, func(callbacks *Callbacks) {
+		callbacks.OnDisconnect = func(ctx context.Context, clientID string, err error) {
+			disconnectedCh <- clientID
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-i")
+	if err := conn.Close(coderws.StatusNormalClosure, "test done"); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	select {
+	case got := <-disconnectedCh:
+		if got != "client-i" {
+			t.Fatalf("clientID = %q", got)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for disconnect callback")
+	}
+}
+
 // streamAppendJSON 构造端侧上行 append 事件 JSON。
 func streamAppendJSON(t *testing.T, alaw []byte) []byte {
 	t.Helper()
@@ -276,7 +339,7 @@ func streamAppendJSON(t *testing.T, alaw []byte) []byte {
 }
 
 // newTestTLSServer 创建使用自签证书的 WebSocket 测试服务。
-func newTestTLSServer(t *testing.T, deps session.Dependencies) (*Server, string, *http.Client) {
+func newTestTLSServer(t *testing.T, deps session.Dependencies, opts ...func(*Callbacks)) (*Server, string, *http.Client) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -287,7 +350,7 @@ func newTestTLSServer(t *testing.T, deps session.Dependencies) (*Server, string,
 	if deps.NewUplinkStages == nil {
 		deps.NewUplinkStages = func(sess *session.Session) ([]media.Stage, error) {
 			return []media.Stage{
-				stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event connector.Event) {
+				stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event media.Event) {
 					sess.OnEvent(ctx, event)
 				}),
 				stages.NewBase64Decode(),
@@ -314,7 +377,24 @@ func newTestTLSServer(t *testing.T, deps session.Dependencies) (*Server, string,
 		DownlinkQueueSize: 8,
 		TargetFormat:      media.DefaultPCM16Format(),
 	}, deps)
-	server, err := NewServer(cfg, manager, nil)
+	callbacks := Callbacks{
+		OnConnect: func(ctx context.Context, client connector.ClientConnector) error {
+			_, _, err := manager.Attach(ctx, client)
+			return err
+		},
+		OnDisconnect: func(ctx context.Context, clientID string, err error) {
+			manager.Remove(ctx, clientID, err)
+		},
+		OnError: func(ctx context.Context, clientID string, err error) {
+			if sess, ok := manager.Get(clientID); ok {
+				sess.OnError(ctx, err)
+			}
+		},
+	}
+	for _, opt := range opts {
+		opt(&callbacks)
+	}
+	server, err := NewServer(cfg, callbacks, nil)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -322,6 +402,25 @@ func newTestTLSServer(t *testing.T, deps session.Dependencies) (*Server, string,
 	ts := httptest.NewTLSServer(server.httpSrv.Handler)
 	t.Cleanup(ts.Close)
 	return server, "wss" + ts.URL[len("https"):], ts.Client()
+}
+
+// newBareTestTLSServer 创建不带 SessionManager 的 WebSocket 测试服务。
+func newBareTestTLSServer(t *testing.T, callbacks Callbacks) (Config, string, *http.Client) {
+	t.Helper()
+
+	dir := t.TempDir()
+	cert, key := writeSelfSignedCert(t, dir)
+	cfg := DefaultConfig()
+	cfg.TLS.CertFile = cert
+	cfg.TLS.KeyFile = key
+	server, err := NewServer(cfg, callbacks, nil)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+
+	ts := httptest.NewTLSServer(server.httpSrv.Handler)
+	t.Cleanup(ts.Close)
+	return cfg, "wss" + ts.URL[len("https"):], ts.Client()
 }
 
 // newCapturingServiceConnector 创建捕获上行帧的服务侧 Connector 工厂。
