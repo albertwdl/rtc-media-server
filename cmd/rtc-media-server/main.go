@@ -22,7 +22,6 @@ import (
 	"rtc-media-server/internal/audioenhancement"
 	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/media"
-	"rtc-media-server/internal/pipeline"
 	"rtc-media-server/internal/pipeline/stages"
 	"rtc-media-server/internal/session"
 	"rtc-media-server/internal/vad"
@@ -77,7 +76,7 @@ func main() {
 		},
 		NewDownlinkStages: func(session *session.Session) ([]media.Stage, error) {
 			return []media.Stage{
-				pipeline.NewPCM16Normalizer(media.DefaultPCM16Format()),
+				stages.NewPCM16Normalizer(media.DefaultPCM16Format()),
 				stages.NewReferenceTap(session.Controller().OnDownlinkReference),
 				stages.NewALawEncode(),
 				stages.NewBase64Encode(),

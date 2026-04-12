@@ -25,7 +25,6 @@ import (
 
 	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/media"
-	"rtc-media-server/internal/pipeline"
 	"rtc-media-server/internal/pipeline/stages"
 	"rtc-media-server/internal/session"
 )
@@ -338,7 +337,7 @@ func newTestTLSServer(t *testing.T, deps session.Dependencies) (*Server, string,
 	if deps.NewDownlinkStages == nil {
 		deps.NewDownlinkStages = func(sess *session.Session) ([]media.Stage, error) {
 			return []media.Stage{
-				pipeline.NewPCM16Normalizer(media.DefaultPCM16Format()),
+				stages.NewPCM16Normalizer(media.DefaultPCM16Format()),
 				stages.NewALawEncode(),
 				stages.NewBase64Encode(),
 				stages.NewWebSocketJSONPack(),
