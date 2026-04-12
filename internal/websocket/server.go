@@ -380,7 +380,7 @@ func (client *clientConnector) channels() []*channelConn {
 	client.mu.RLock()
 	defer client.mu.RUnlock()
 
-	channels := make([]*channelConn, 0, 2)
+	var channels []*channelConn
 	if client.stream != nil {
 		channels = append(channels, client.stream)
 	}
