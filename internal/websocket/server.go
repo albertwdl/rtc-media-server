@@ -13,7 +13,6 @@ import (
 
 	coderws "github.com/coder/websocket"
 
-	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/session"
 )
@@ -510,12 +509,6 @@ func (client *clientConnector) reportMedia(ctx context.Context, frame media.Fram
 func (client *clientConnector) reportCommand(ctx context.Context, payload []byte) {
 	if session := client.getSession(); session != nil {
 		session.OnCommand(ctx, payload)
-	}
-}
-
-func (client *clientConnector) reportEvent(ctx context.Context, event connector.Event) {
-	if session := client.getSession(); session != nil {
-		session.OnEvent(ctx, event)
 	}
 }
 

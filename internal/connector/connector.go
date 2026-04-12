@@ -48,11 +48,10 @@ type ServiceConnector interface {
 
 // NoopServiceConnector 是默认空服务连接器，用于未接入业务服务时保持管线可运行。
 type NoopServiceConnector struct {
-	id     string
-	done   chan struct{}
-	once   sync.Once
-	count  atomic.Uint64
-	closed atomic.Bool
+	id    string
+	done  chan struct{}
+	once  sync.Once
+	count atomic.Uint64
 }
 
 func NewNoopServiceConnector(id string) *NoopServiceConnector {
@@ -74,7 +73,6 @@ func (c *NoopServiceConnector) Flush(ctx context.Context, reason string) error {
 
 func (c *NoopServiceConnector) Close(ctx context.Context, reason string) error {
 	c.once.Do(func() {
-		c.closed.Store(true)
 		close(c.done)
 	})
 	return nil

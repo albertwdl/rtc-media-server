@@ -22,13 +22,24 @@ type MockStage struct {
 
 // NewMockStage 创建 VAD mock stage。
 func NewMockStage(logger *slog.Logger) *MockStage {
+	return NewMockStageWithTimeouts(logger, 15*time.Second, 5*time.Second)
+}
+
+// NewMockStageWithTimeouts 创建带静音超时配置的 VAD mock stage。
+func NewMockStageWithTimeouts(logger *slog.Logger, initialSilence, silence time.Duration) *MockStage {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if initialSilence <= 0 {
+		initialSilence = 15 * time.Second
+	}
+	if silence <= 0 {
+		silence = 5 * time.Second
+	}
 	return &MockStage{
 		logger:              logger,
-		initialSilenceLimit: 15 * time.Second,
-		silenceLimit:        5 * time.Second,
+		initialSilenceLimit: initialSilence,
+		silenceLimit:        silence,
 	}
 }
 

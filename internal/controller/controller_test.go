@@ -65,6 +65,33 @@ func TestControllerSilenceTimeoutClosesSession(t *testing.T) {
 	}
 }
 
+func TestControllerDropsReferenceAfterClose(t *testing.T) {
+	ctrl := New(Config{ReferenceQueueSize: 1}, Dependencies{
+		SessionID:        "client-c",
+		ServiceConnector: connector.NewNoopServiceConnector("client-c"),
+	})
+	if err := ctrl.Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		ctrl.OnDownlinkReference(context.Background(), media.Frame{
+			SessionID: "client-c",
+			Direction: media.DirectionDownlink,
+			Payload:   []byte{0x01},
+			Format:    media.DefaultPCM16Format(),
+		})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("OnDownlinkReference blocked after controller close")
+	}
+}
+
 type referenceConsumer struct {
 	count atomic.Uint64
 }

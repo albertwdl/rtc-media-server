@@ -43,7 +43,7 @@ func TestMockStageProcessPassesFrameThrough(t *testing.T) {
 }
 
 func TestMockStageEmitsSilenceTimeout(t *testing.T) {
-	stage := NewMockStage(nil)
+	stage := NewMockStageWithTimeouts(nil, 2*time.Second, 3*time.Second)
 	eventCh := make(chan media.StageEvent, 1)
 	stage.SetEventEmitter(func(ctx context.Context, event media.StageEvent) {
 		eventCh <- event
@@ -61,6 +61,12 @@ func TestMockStageEmitsSilenceTimeout(t *testing.T) {
 		}
 		if event.Stage != stage.Name() {
 			t.Fatalf("stage = %q", event.Stage)
+		}
+		if event.Metadata["initial_silence_timeout"] != "2s" {
+			t.Fatalf("initial timeout = %q", event.Metadata["initial_silence_timeout"])
+		}
+		if event.Metadata["silence_timeout"] != "3s" {
+			t.Fatalf("silence timeout = %q", event.Metadata["silence_timeout"])
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for event")

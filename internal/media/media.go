@@ -33,7 +33,7 @@ type Format struct {
 	ClockRate   int
 }
 
-// Frame 是 Session、Transport 和 Pipeline 之间传递的统一媒体数据模型。
+// Frame 是 Session、Connector 和 Pipeline 之间传递的统一媒体数据模型。
 type Frame struct {
 	SessionID string
 	Direction Direction

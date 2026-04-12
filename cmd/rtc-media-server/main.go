@@ -59,7 +59,11 @@ func main() {
 				return nil, err
 			}
 			session.Controller().RegisterReferenceConsumer(engine.Name(), engine)
-			vadStage := vad.NewMockStage(session.Logger())
+			vadStage := vad.NewMockStageWithTimeouts(
+				session.Logger(),
+				session.Controller().InitialSilenceTimeout(),
+				session.Controller().SilenceTimeout(),
+			)
 			vadStage.SetEventEmitter(session.Controller().Emit)
 			return []media.Stage{
 				stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event connector.Event) {

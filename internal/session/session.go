@@ -96,11 +96,6 @@ func NewManager(cfg Config, deps Dependencies) *Manager {
 	}
 }
 
-// CreateOrAttach 根据客户端 Connector 创建或复用 Session。
-func (m *Manager) CreateOrAttach(ctx context.Context, client connector.ClientConnector) (*Session, bool, error) {
-	return m.Attach(ctx, client)
-}
-
 // Attach 把一个客户端 Connector 挂到业务 Session 上。
 // 如果该 Connector ID 已存在，则复用已有 Session。
 func (m *Manager) Attach(ctx context.Context, client connector.ClientConnector) (*Session, bool, error) {
@@ -135,75 +130,62 @@ func (m *Manager) Attach(ctx context.Context, client connector.ClientConnector) 
 		return nil, false, err
 	}
 	s.serviceConnector = service
+	cleanup := func(reason string) {
+		cancel()
+		if s.uplink != nil {
+			_ = s.uplink.Close(ctx)
+		}
+		if s.downlink != nil {
+			_ = s.downlink.Close(ctx)
+		}
+		if s.controller != nil {
+			_ = s.controller.Close(ctx)
+		}
+		_ = service.Close(ctx, reason)
+	}
 
 	ctrl, err := m.controllerFor(s)
 	if err != nil {
-		cancel()
-		_ = service.Close(ctx, "create controller failed")
+		cleanup("create controller failed")
 		return nil, false, err
 	}
 	s.controller = ctrl
 
 	uplinkStages, err := m.uplinkStagesFor(s)
 	if err != nil {
-		cancel()
-		_ = ctrl.Close(ctx)
-		_ = service.Close(ctx, "create uplink stages failed")
+		cleanup("create uplink stages failed")
 		return nil, false, err
 	}
 	downlinkStages, err := m.downlinkStagesFor(s)
 	if err != nil {
-		cancel()
-		_ = ctrl.Close(ctx)
-		_ = service.Close(ctx, "create downlink stages failed")
+		cleanup("create downlink stages failed")
 		return nil, false, err
 	}
 
-	uplink := pipeline.NewQueuePipeline("uplink", m.cfg.UplinkQueueSize, uplinkStages, service, logger)
-	uplink.SetErrorHandler(func(ctx context.Context, frame media.Frame, err error) {
-		s.OnError(ctx, fmt.Errorf("uplink pipeline: %w", err))
-	})
-	downlink := pipeline.NewQueuePipeline("downlink", m.cfg.DownlinkQueueSize, downlinkStages, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
+	s.uplink = s.newPipeline("uplink", m.cfg.UplinkQueueSize, uplinkStages, service)
+	s.downlink = s.newPipeline("downlink", m.cfg.DownlinkQueueSize, downlinkStages, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
 		return client.Consume(ctx, frame)
-	}), logger)
-	downlink.SetErrorHandler(func(ctx context.Context, frame media.Frame, err error) {
-		s.OnError(ctx, fmt.Errorf("downlink pipeline: %w", err))
-	})
-	s.uplink = uplink
-	s.downlink = downlink
+	}))
 
 	if err := s.uplink.Start(sessionCtx); err != nil {
-		cancel()
-		_ = ctrl.Close(ctx)
-		_ = service.Close(ctx, "start uplink failed")
+		cleanup("start uplink failed")
 		return nil, false, err
 	}
 	if err := s.downlink.Start(sessionCtx); err != nil {
-		cancel()
-		_ = s.uplink.Close(ctx)
-		_ = ctrl.Close(ctx)
-		_ = service.Close(ctx, "start downlink failed")
+		cleanup("start downlink failed")
 		return nil, false, err
 	}
 	if err := service.Start(sessionCtx, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
 		return s.EnqueueDownlink(ctx, frame)
 	})); err != nil {
-		cancel()
-		_ = s.uplink.Close(ctx)
-		_ = s.downlink.Close(ctx)
-		_ = ctrl.Close(ctx)
-		_ = service.Close(ctx, "start service connector failed")
+		cleanup("start service connector failed")
 		return nil, false, err
 	}
 	if err := client.Start(sessionCtx, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
 		s.OnMedia(ctx, frame)
 		return nil
 	})); err != nil {
-		cancel()
-		_ = s.uplink.Close(ctx)
-		_ = s.downlink.Close(ctx)
-		_ = ctrl.Close(ctx)
-		_ = service.Close(ctx, "start client connector failed")
+		cleanup("start client connector failed")
 		return nil, false, err
 	}
 
@@ -213,6 +195,14 @@ func (m *Manager) Attach(ctx context.Context, client connector.ClientConnector) 
 	}
 	logger.Info("client_id=" + s.id + " session created")
 	return s, true, nil
+}
+
+func (s *Session) newPipeline(name string, queueSize int, stages []media.Stage, sink media.Sink) media.Pipeline {
+	p := pipeline.NewQueuePipeline(name, queueSize, stages, sink, s.logger)
+	p.SetErrorHandler(func(ctx context.Context, frame media.Frame, err error) {
+		s.OnError(ctx, fmt.Errorf("%s pipeline: %w", name, err))
+	})
+	return p
 }
 
 func (m *Manager) serviceConnectorFor(s *Session) (connector.ServiceConnector, error) {
@@ -397,11 +387,6 @@ func (s *Session) OnError(ctx context.Context, err error) {
 	if s.onError != nil {
 		s.onError(s, err)
 	}
-}
-
-func (s *Session) OnClosed(ctx context.Context, err error) {
-	s.setErr(err)
-	s.logger.Info("client_id="+s.id+" connector closed", slog.Any("error", err))
 }
 
 func (s *Session) setErr(err error) {

@@ -60,7 +60,7 @@ func New(cfg Config, deps Dependencies) *Controller {
 	if cfg.ReferenceQueueSize <= 0 {
 		cfg.ReferenceQueueSize = 16
 	}
-	if cfg.ReferenceDropPolicy == "" {
+	if cfg.ReferenceDropPolicy != ReferenceDropNewest {
 		cfg.ReferenceDropPolicy = ReferenceDropNewest
 	}
 	if deps.Logger == nil {
@@ -104,6 +104,8 @@ func (c *Controller) Emit(ctx context.Context, event media.StageEvent) {
 func (c *Controller) OnDownlinkReference(ctx context.Context, frame media.Frame) {
 	frame.SessionID = c.deps.SessionID
 	select {
+	case <-c.done:
+		return
 	case c.references <- cloneFrame(frame):
 	default:
 		c.deps.Logger.Warn(
@@ -159,6 +161,14 @@ func (c *Controller) Close(ctx context.Context) error {
 }
 
 func (c *Controller) Done() <-chan struct{} { return c.done }
+
+func (c *Controller) InitialSilenceTimeout() time.Duration {
+	return c.cfg.InitialSilenceTimeout
+}
+
+func (c *Controller) SilenceTimeout() time.Duration {
+	return c.cfg.SilenceTimeout
+}
 
 func (c *Controller) run() {
 	for {
