@@ -20,8 +20,10 @@ import (
 
 	"rtc-media-server/internal/application"
 	"rtc-media-server/internal/audioenhancement"
+	"rtc-media-server/internal/endpoint"
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/pipeline"
+	"rtc-media-server/internal/pipeline/stages"
 	"rtc-media-server/internal/session"
 	"rtc-media-server/internal/vad"
 	"rtc-media-server/internal/websocket"
@@ -54,12 +56,22 @@ func main() {
 				return nil, err
 			}
 			return []media.Stage{
+				stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event endpoint.Event) {
+					session.OnEvent(ctx, event)
+				}),
+				stages.NewBase64Decode(),
+				stages.NewALawDecode(media.DefaultPCM16Format()),
 				engine,
 				vad.NewMockStage(session.Logger()),
 			}, nil
 		},
 		NewDownlinkStages: func(session *session.Session) ([]media.Stage, error) {
-			return []media.Stage{pipeline.NewPCM16Normalizer(media.DefaultPCM16Format())}, nil
+			return []media.Stage{
+				pipeline.NewPCM16Normalizer(media.DefaultPCM16Format()),
+				stages.NewALawEncode(),
+				stages.NewBase64Encode(),
+				stages.NewWebSocketJSONPack(),
+			}, nil
 		},
 		ApplicationSink: application.NewMockSink(logger),
 		OnSession: func(session *session.Session) {

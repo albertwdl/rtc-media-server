@@ -2,8 +2,6 @@ package websocket
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -19,15 +17,6 @@ import (
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/session"
 )
-
-// StreamEvent 表示 stream 通道收到并解析后的 JSON 事件。
-// RawJSON 保留原始 payload，AudioBase64 用于 input_audio_buffer.append，DeltaBase64 用于 response.audio.delta。
-type StreamEvent struct {
-	Type        string
-	RawJSON     []byte
-	AudioBase64 string
-	DeltaBase64 string
-}
 
 // Server 是全局 WebSocket 监听器，负责 WSS 接入并创建每个客户端的 Endpoint。
 type Server struct {
@@ -235,38 +224,19 @@ func (s *Server) readStream(ctx context.Context, client *clientEndpoint, ch *cha
 }
 
 func (s *Server) handleStreamPayload(ctx context.Context, client *clientEndpoint, payload []byte) {
-	event, err := decodeStreamEvent(payload)
-	if err != nil {
-		client.reportError(ctx, fmt.Errorf("decode stream json: %w", err))
-		return
-	}
-
-	client.reportEvent(ctx, endpoint.Event{
-		Type: event.Type,
-		Raw:  append([]byte(nil), payload...),
-		Fields: map[string]string{
-			"audio": event.AudioBase64,
-			"delta": event.DeltaBase64,
-		},
-	})
-	if event.Type != "input_audio_buffer.append" || event.AudioBase64 == "" {
-		return
-	}
-
-	alaw, err := base64.StdEncoding.DecodeString(event.AudioBase64)
-	if err != nil {
-		client.reportError(ctx, fmt.Errorf("decode stream audio base64: %w", err))
-		return
-	}
-	pcm := DecodeALawToPCM(alaw)
 	client.reportMedia(ctx, media.Frame{
 		SessionID: client.id,
 		Direction: media.DirectionUplink,
 		Timestamp: time.Now(),
-		Payload:   pcm,
-		Format:    media.DefaultPCM16Format(),
+		Payload:   append([]byte(nil), payload...),
+		Format: media.Format{
+			Kind:       media.KindAudio,
+			Codec:      media.CodecJSON,
+			SampleRate: s.cfg.Stream.SampleRate,
+			Channels:   s.cfg.Stream.Channels,
+		},
 		Metadata: map[string]string{
-			"source_event": event.Type,
+			"source": "websocket_stream",
 		},
 	})
 }
@@ -291,23 +261,6 @@ func (s *Server) readCmd(ctx context.Context, client *clientEndpoint, ch *channe
 		}
 		client.reportCommand(ctx, payload)
 	}
-}
-
-func decodeStreamEvent(payload []byte) (StreamEvent, error) {
-	var raw struct {
-		Type  string `json:"type"`
-		Audio string `json:"audio"`
-		Delta string `json:"delta"`
-	}
-	if err := json.Unmarshal(payload, &raw); err != nil {
-		return StreamEvent{}, err
-	}
-	return StreamEvent{
-		Type:        raw.Type,
-		RawJSON:     append([]byte(nil), payload...),
-		AudioBase64: raw.Audio,
-		DeltaBase64: raw.Delta,
-	}, nil
 }
 
 func (s *Server) reserveChannel(clientID string, kind channelKind) (*clientEndpoint, error) {
@@ -417,19 +370,10 @@ func (client *clientEndpoint) Consume(ctx context.Context, frame media.Frame) er
 	if ch == nil {
 		return fmt.Errorf("client_id=%s stream channel not connected", client.id)
 	}
-
-	alaw := EncodePCMToALaw(frame.Payload)
-	payload, err := json.Marshal(struct {
-		Type  string `json:"type"`
-		Delta string `json:"delta"`
-	}{
-		Type:  "response.audio.delta",
-		Delta: base64.StdEncoding.EncodeToString(alaw),
-	})
-	if err != nil {
-		return err
+	if frame.Format.Codec != media.CodecJSON {
+		return fmt.Errorf("client_id=%s websocket endpoint requires json frame, got %s", client.id, frame.Format.Codec)
 	}
-	return client.server.write(ctx, ch, coderws.MessageText, payload)
+	return client.server.write(ctx, ch, coderws.MessageText, frame.Payload)
 }
 
 func (client *clientEndpoint) SendCommand(ctx context.Context, payload []byte) error {

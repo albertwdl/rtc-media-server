@@ -25,6 +25,12 @@ const (
 // ErrFatal 表示不可恢复的媒体处理错误，pipeline 会优先关闭当前实例。
 var ErrFatal = errors.New("fatal pipeline error")
 
+// ErrDropFrame 表示当前帧应被主动丢弃，不作为异常上报。
+var ErrDropFrame = errors.New("drop pipeline frame")
+
+// ErrorHandler 接收 pipeline 中需要上报给 Session 的处理错误。
+type ErrorHandler func(ctx context.Context, frame media.Frame, err error)
+
 // QueuePipeline 是一个有界队列驱动的串行媒体处理管线。
 // 每个客户端的上行、下行都应拥有独立实例，避免跨客户端互相阻塞。
 type QueuePipeline struct {
@@ -34,6 +40,7 @@ type QueuePipeline struct {
 	sink          media.Sink
 	logger        *slog.Logger
 	errorStrategy ErrorStrategy
+	errorHandler  ErrorHandler
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -42,6 +49,11 @@ type QueuePipeline struct {
 
 	processed atomic.Uint64
 	errors    atomic.Uint64
+}
+
+// SetErrorHandler 设置 pipeline 错误上报回调。
+func (p *QueuePipeline) SetErrorHandler(handler ErrorHandler) {
+	p.errorHandler = handler
 }
 
 // NewQueuePipeline 创建一个有界队列 pipeline。
@@ -149,6 +161,9 @@ func (p *QueuePipeline) process(ctx context.Context, frame media.Frame) error {
 	for _, stage := range p.stages {
 		frame, err = stage.Process(ctx, frame)
 		if err != nil {
+			if errors.Is(err, ErrDropFrame) {
+				return nil
+			}
 			p.logger.Error(
 				fmt.Sprintf("client_id=%s pipeline stage failed", frame.SessionID),
 				slog.String("client_id", frame.SessionID),
@@ -158,6 +173,7 @@ func (p *QueuePipeline) process(ctx context.Context, frame media.Frame) error {
 				slog.String("codec", frame.Format.Codec),
 				slog.Any("error", err),
 			)
+			p.reportError(ctx, frame, fmt.Errorf("stage %s: %w", stage.Name(), err))
 			if errors.Is(err, ErrFatal) || p.errorStrategy == ErrorStrategyCloseSession {
 				_ = p.Close(ctx)
 				return err
@@ -171,5 +187,15 @@ func (p *QueuePipeline) process(ctx context.Context, frame media.Frame) error {
 	if p.sink == nil {
 		return nil
 	}
-	return p.sink.Consume(ctx, frame)
+	if err := p.sink.Consume(ctx, frame); err != nil {
+		p.reportError(ctx, frame, fmt.Errorf("sink: %w", err))
+		return err
+	}
+	return nil
+}
+
+func (p *QueuePipeline) reportError(ctx context.Context, frame media.Frame, err error) {
+	if p.errorHandler != nil {
+		p.errorHandler(ctx, frame, err)
+	}
 }

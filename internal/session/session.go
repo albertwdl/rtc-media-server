@@ -140,10 +140,18 @@ func (m *Manager) Attach(ctx context.Context, ep endpoint.Endpoint) (*Session, b
 		return nil, false, err
 	}
 
-	s.uplink = pipeline.NewQueuePipeline("uplink", m.cfg.UplinkQueueSize, uplinkStages, uplinkSink, logger)
-	s.downlink = pipeline.NewQueuePipeline("downlink", m.cfg.DownlinkQueueSize, downlinkStages, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
+	uplink := pipeline.NewQueuePipeline("uplink", m.cfg.UplinkQueueSize, uplinkStages, uplinkSink, logger)
+	uplink.SetErrorHandler(func(ctx context.Context, frame media.Frame, err error) {
+		s.OnError(ctx, fmt.Errorf("uplink pipeline: %w", err))
+	})
+	downlink := pipeline.NewQueuePipeline("downlink", m.cfg.DownlinkQueueSize, downlinkStages, media.SinkFunc(func(ctx context.Context, frame media.Frame) error {
 		return ep.Consume(ctx, frame)
 	}), logger)
+	downlink.SetErrorHandler(func(ctx context.Context, frame media.Frame, err error) {
+		s.OnError(ctx, fmt.Errorf("downlink pipeline: %w", err))
+	})
+	s.uplink = uplink
+	s.downlink = downlink
 
 	if err := s.uplink.Start(sessionCtx); err != nil {
 		cancel()

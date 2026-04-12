@@ -7,6 +7,8 @@ import (
 
 const (
 	KindAudio     = "audio"
+	CodecJSON     = "json"
+	CodecBase64   = "base64"
 	CodecPCM16LE  = "pcm16le"
 	CodecG711ALaw = "g711_alaw"
 	CodecRTP      = "rtp"

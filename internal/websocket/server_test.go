@@ -24,6 +24,8 @@ import (
 
 	"rtc-media-server/internal/endpoint"
 	"rtc-media-server/internal/media"
+	"rtc-media-server/internal/pipeline"
+	"rtc-media-server/internal/pipeline/stages"
 	"rtc-media-server/internal/session"
 )
 
@@ -327,6 +329,27 @@ func newTestTLSServer(t *testing.T, deps session.Dependencies) (*Server, string,
 	cfg := DefaultConfig()
 	cfg.TLS.CertFile = cert
 	cfg.TLS.KeyFile = key
+	if deps.NewUplinkStages == nil {
+		deps.NewUplinkStages = func(sess *session.Session) ([]media.Stage, error) {
+			return []media.Stage{
+				stages.NewWebSocketJSONUnpack(func(ctx context.Context, frame media.Frame, event endpoint.Event) {
+					sess.OnEvent(ctx, event)
+				}),
+				stages.NewBase64Decode(),
+				stages.NewALawDecode(media.DefaultPCM16Format()),
+			}, nil
+		}
+	}
+	if deps.NewDownlinkStages == nil {
+		deps.NewDownlinkStages = func(sess *session.Session) ([]media.Stage, error) {
+			return []media.Stage{
+				pipeline.NewPCM16Normalizer(media.DefaultPCM16Format()),
+				stages.NewALawEncode(),
+				stages.NewBase64Encode(),
+				stages.NewWebSocketJSONPack(),
+			}, nil
+		}
+	}
 
 	manager := session.NewManager(session.Config{
 		UplinkQueueSize:   8,
