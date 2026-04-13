@@ -50,6 +50,7 @@ type QueuePipeline struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	once   sync.Once
+	closed atomic.Bool
 
 	errorMu      sync.RWMutex
 	errorHandler ErrorHandler
@@ -106,6 +107,9 @@ func (p *QueuePipeline) Push(ctx context.Context, frame media.Frame) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if p.closed.Load() {
+		return errPipelineClosed
+	}
 	return p.input.Push(ctx, frame)
 }
 
@@ -113,6 +117,7 @@ func (p *QueuePipeline) Push(ctx context.Context, frame media.Frame) error {
 func (p *QueuePipeline) Close(ctx context.Context) error {
 	var firstErr error
 	p.once.Do(func() {
+		p.closed.Store(true)
 		if p.cancel != nil {
 			p.cancel()
 		}
