@@ -152,6 +152,79 @@ func TestControlStreamJSONEventsAreReported(t *testing.T) {
 	}
 }
 
+// TestRealtimeRouteAcceptsAuthHeaders 验证端侧 /v1/realtime 路径和认证扩展 headers 能建联。
+func TestRealtimeRouteAcceptsAuthHeaders(t *testing.T) {
+	sessionCh := make(chan *session.Session, 1)
+	_, url, client := newTestTLSServer(t, func(sess *session.Session) {
+		sessionCh <- sess
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	headers := http.Header{}
+	headers.Set("X-Auth-Type", "1")
+	headers.Set("X-Product-Key", "product-test")
+	headers.Set("X-Device-Name", "device-test")
+	headers.Set("X-Random-Num", "123456")
+	headers.Set("X-Timestamp", "1710000000")
+	headers.Set("X-Instance-Id", "instance-test")
+	headers.Set("X-Signature", "invalid-signature-is-accepted")
+	headers.Set("X-Hardware-Id", "hardware-realtime")
+	conn, _, err := coderws.Dial(ctx, url+RealtimeStreamPath+"?bot=bot-test&wait_for_session_update=true", &coderws.DialOptions{
+		HTTPClient: client,
+		HTTPHeader: headers,
+	})
+	if err != nil {
+		t.Fatalf("dial realtime route: %v", err)
+	}
+	defer conn.Close(coderws.StatusNormalClosure, "test done")
+
+	sess := waitForSession(t, ctx, sessionCh)
+	if sess.ID() != "hardware-realtime" {
+		t.Fatalf("session id = %q", sess.ID())
+	}
+}
+
+// TestStreamControlEventsSendAcks 验证端侧关键控制事件会收到最小状态回包。
+func TestStreamControlEventsSendAcks(t *testing.T) {
+	sessionCh := make(chan *session.Session, 1)
+	_, url, _ := newTestTLSServer(t, func(sess *session.Session) {
+		sessionCh <- sess
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-ack")
+	defer conn.Close(coderws.StatusNormalClosure, "test done")
+	_ = waitForSession(t, ctx, sessionCh)
+
+	tests := []struct {
+		send []byte
+		want string
+	}{
+		{
+			send: []byte(`{"event_id":"session-ack","type":"session.update","session":{"object":"realtime.session","input_audio_format":"g711_alaw","output_audio_format":"g711_alaw"}}`),
+			want: "session.updated",
+		},
+		{
+			send: []byte(`{"event_id":"commit-ack","type":"input_audio_buffer.commit"}`),
+			want: "input_audio_buffer.committed",
+		},
+		{
+			send: []byte(`{"event_id":"create-ack","type":"response.create"}`),
+			want: "response.created",
+		},
+	}
+	for _, tt := range tests {
+		if err := conn.Write(ctx, coderws.MessageText, tt.send); err != nil {
+			t.Fatalf("write stream: %v", err)
+		}
+		if got := readEventType(t, ctx, conn); got != tt.want {
+			t.Fatalf("ack type = %q, want %q", got, tt.want)
+		}
+	}
+}
+
 // TestDownlinkPipelineSendsResponseAudioDelta 验证下行 PCM 会发送 response.audio.delta。
 func TestDownlinkPipelineSendsResponseAudioDelta(t *testing.T) {
 	sessionCh := make(chan *session.Session, 1)
@@ -410,6 +483,22 @@ func waitEvent(t *testing.T, ctx context.Context, eventCh <-chan media.Event) me
 		t.Fatal("timed out waiting for stream event")
 		return media.Event{}
 	}
+}
+
+// readEventType 读取一条 WebSocket JSON 消息并返回 type 字段。
+func readEventType(t *testing.T, ctx context.Context, conn *coderws.Conn) string {
+	t.Helper()
+	_, payload, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read event: %v", err)
+	}
+	var event struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(payload, &event); err != nil {
+		t.Fatalf("unmarshal event %s: %v", payload, err)
+	}
+	return event.Type
 }
 
 // newBareTestTLSServer 创建不带 SessionManager 的 WebSocket 测试服务。

@@ -19,12 +19,15 @@ import (
 )
 
 const (
-	inputAudioAppendEvent  = "input_audio_buffer.append"
-	inputAudioCommitEvent  = "input_audio_buffer.commit"
-	responseCreateEvent    = "response.create"
-	responseCancelEvent    = "response.cancel"
-	sessionUpdateEvent     = "session.update"
-	responseAudioDeltaType = "response.audio.delta"
+	inputAudioAppendEvent    = "input_audio_buffer.append"
+	inputAudioCommitEvent    = "input_audio_buffer.commit"
+	responseCreateEvent      = "response.create"
+	responseCancelEvent      = "response.cancel"
+	sessionUpdateEvent       = "session.update"
+	sessionUpdatedEvent      = "session.updated"
+	inputAudioCommittedEvent = "input_audio_buffer.committed"
+	responseCreatedEvent     = "response.created"
+	responseAudioDeltaType   = "response.audio.delta"
 )
 
 // Server 是全局 WebSocket 监听器，负责 WSS 接入并创建每个客户端的 Connector。
@@ -91,6 +94,9 @@ func NewServer(cfg Config, callbacks Callbacks) (*Server, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc(cfg.StreamPath, s.handleStream)
+	if cfg.StreamPath != RealtimeStreamPath {
+		mux.HandleFunc(RealtimeStreamPath, s.handleStream)
+	}
 
 	s.httpSrv = &http.Server{
 		Addr:              net.JoinHostPort(cfg.Listen, fmt.Sprintf("%d", cfg.Port)),
@@ -164,6 +170,16 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing websocket client id header "+s.cfg.ClientIDHeader, http.StatusBadRequest)
 		return
 	}
+	log.Debugf(
+		"client_id=%s websocket handshake path=%s raw_query=%s auth_type=%s device_name=%s instance_id=%s signature_present=%v",
+		clientID,
+		r.URL.Path,
+		r.URL.RawQuery,
+		r.Header.Get("X-Auth-Type"),
+		r.Header.Get("X-Device-Name"),
+		r.Header.Get("X-Instance-Id"),
+		r.Header.Get("X-Signature") != "",
+	)
 
 	client, err := s.reserveClient(clientID)
 	if err != nil {
@@ -220,6 +236,7 @@ func (s *Server) readStream(ctx context.Context, client *clientConnector, ch *ch
 
 // handleStreamPayload 解析 stream JSON 事件，并只把音频字段转成媒体帧交给 pipeline。
 func (s *Server) handleStreamPayload(ctx context.Context, client *clientConnector, payload []byte) {
+	log.Debugf("client_id=%s websocket received json=%s", client.id, string(payload))
 	event, err := parseStreamEvent(payload)
 	if err != nil {
 		s.reportError(ctx, client.id, fmt.Errorf("parse stream event: %w", err))
@@ -285,12 +302,18 @@ func (s *Server) handleInputAudioAppend(ctx context.Context, client *clientConne
 func (s *Server) handleInputAudioCommit(ctx context.Context, client *clientConnector, event streamEvent) {
 	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
 	s.reportEvent(ctx, client.id, event)
+	if err := client.sendStreamEvent(ctx, inputAudioCommittedEvent); err != nil {
+		s.reportError(ctx, client.id, fmt.Errorf("send input audio committed: %w", err))
+	}
 }
 
 // handleResponseCreate 预留 response.create 控制事件处理入口。
 func (s *Server) handleResponseCreate(ctx context.Context, client *clientConnector, event streamEvent) {
 	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
 	s.reportEvent(ctx, client.id, event)
+	if err := client.sendStreamEvent(ctx, responseCreatedEvent); err != nil {
+		s.reportError(ctx, client.id, fmt.Errorf("send response created: %w", err))
+	}
 }
 
 // handleResponseCancel 预留 response.cancel 控制事件处理入口。
@@ -303,6 +326,9 @@ func (s *Server) handleResponseCancel(ctx context.Context, client *clientConnect
 func (s *Server) handleSessionUpdate(ctx context.Context, client *clientConnector, event streamEvent) {
 	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
 	s.reportEvent(ctx, client.id, event)
+	if err := client.sendStreamEvent(ctx, sessionUpdatedEvent); err != nil {
+		s.reportError(ctx, client.id, fmt.Errorf("send session updated: %w", err))
+	}
 }
 
 // handleUnknownStreamEvent 处理当前未识别的 stream 事件。
@@ -429,6 +455,21 @@ func (client *clientConnector) SendData(ctx context.Context, frame media.Frame) 
 	if err != nil {
 		return err
 	}
+	log.Debugf("client_id=%s websocket sending json=%s", client.id, string(payload))
+	return client.server.write(ctx, ch, coderws.MessageText, payload)
+}
+
+// sendStreamEvent 向端侧发送不带额外 payload 的 stream 控制事件。
+func (client *clientConnector) sendStreamEvent(ctx context.Context, eventType string) error {
+	ch := client.streamConn()
+	if ch == nil {
+		return fmt.Errorf("client_id=%s stream channel not connected", client.id)
+	}
+	payload, err := packSimpleStreamEvent(eventType)
+	if err != nil {
+		return err
+	}
+	log.Debugf("client_id=%s websocket sending json=%s", client.id, string(payload))
 	return client.server.write(ctx, ch, coderws.MessageText, payload)
 }
 
@@ -560,6 +601,13 @@ func packResponseAudioDelta(base64Audio []byte) ([]byte, error) {
 		Type:  responseAudioDeltaType,
 		Delta: string(base64Audio),
 	})
+}
+
+// packSimpleStreamEvent 将只有 type 字段的控制事件打包为 JSON。
+func packSimpleStreamEvent(eventType string) ([]byte, error) {
+	return json.Marshal(struct {
+		Type string `json:"type"`
+	}{Type: eventType})
 }
 
 // clearDataInput 清理客户端绑定的 pipeline 输入端。
