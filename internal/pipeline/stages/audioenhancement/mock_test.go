@@ -7,19 +7,19 @@ import (
 	"testing"
 )
 
-// TestMockEngineSavePCM 验证语音增强 mock 会保存 PCM 数据。
-func TestMockEngineSavePCM(t *testing.T) {
+// TestMockStageSavePCM 验证语音增强 mock stage 会保存 PCM 数据。
+func TestMockStageSavePCM(t *testing.T) {
 	dir := t.TempDir()
-	engine, err := NewMockEngine(dir)
+	stage, err := NewMockStage(dir)
 	if err != nil {
-		t.Fatalf("NewMockEngine: %v", err)
+		t.Fatalf("NewMockStage: %v", err)
 	}
-	defer engine.Close(context.Background())
+	defer stage.Close(context.Background())
 
-	if err := engine.SavePCM("client/a", []byte{0x01, 0x02}); err != nil {
+	if err := stage.SavePCM("client/a", []byte{0x01, 0x02}); err != nil {
 		t.Fatalf("SavePCM first: %v", err)
 	}
-	if err := engine.SavePCM("client/a", []byte{0x03}); err != nil {
+	if err := stage.SavePCM("client/a", []byte{0x03}); err != nil {
 		t.Fatalf("SavePCM second: %v", err)
 	}
 

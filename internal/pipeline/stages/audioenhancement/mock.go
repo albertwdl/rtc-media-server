@@ -17,9 +17,9 @@ const (
 	pcmOutputFilePerm = 0o600
 )
 
-// MockEngine 模拟 AEC+AGC+ANS 语音增强引擎。
+// MockStage 模拟 AEC+AGC+ANS 语音增强 stage。
 // 当前实现不做真实算法处理，只把经过该 stage 的 PCM 追加保存到本地文件。
-type MockEngine struct {
+type MockStage struct {
 	outputDir string
 
 	mu    sync.Mutex
@@ -27,29 +27,29 @@ type MockEngine struct {
 	refs  int
 }
 
-// NewMockEngine 创建一个模拟 AEC+AGC+ANS 语音增强引擎。
+// NewMockStage 创建模拟 AEC+AGC+ANS 的 pipeline stage。
 // outputDir 用于存放每个 client 独立的 PCM 文件。
-func NewMockEngine(outputDir string) (*MockEngine, error) {
+func NewMockStage(outputDir string) (*MockStage, error) {
 	if outputDir == "" {
 		outputDir = filepath.Join("runtime", "pcm")
 	}
 	if err := os.MkdirAll(outputDir, pcmOutputDirPerm); err != nil {
 		return nil, fmt.Errorf("create PCM output directory failed: %w", err)
 	}
-	return &MockEngine{
+	return &MockStage{
 		outputDir: outputDir,
 		files:     make(map[string]*os.File),
 	}, nil
 }
 
 // Name 返回语音增强 mock stage 名称。
-func (e *MockEngine) Name() string { return "aec_agc_ans_mock" }
+func (s *MockStage) Name() string { return "aec_agc_ans_mock" }
 
 // AddReference 接收下行参考信号。真实 AEC 会把该信号写入回声参考缓冲区。
-func (e *MockEngine) AddReference(ctx context.Context, frame media.Frame) error {
-	e.mu.Lock()
-	e.refs++
-	e.mu.Unlock()
+func (s *MockStage) AddReference(ctx context.Context, frame media.Frame) error {
+	s.mu.Lock()
+	s.refs++
+	s.mu.Unlock()
 	log.Infof(
 		"client_id=%s audio enhancement reference received direction=%s codec=%s bytes=%d",
 		frame.SessionID,
@@ -60,10 +60,10 @@ func (e *MockEngine) AddReference(ctx context.Context, frame media.Frame) error 
 	return nil
 }
 
-// Process 实现 media.Stage，模拟 AEC+AGC+ANS 处理并透传媒体帧。
-func (e *MockEngine) Process(ctx context.Context, frame media.Frame) (media.Frame, error) {
+// Process 模拟 AEC+AGC+ANS 处理并透传媒体帧。
+func (s *MockStage) Process(ctx context.Context, frame media.Frame) (media.Frame, error) {
 	if frame.Format.Codec == media.CodecPCM16LE {
-		if err := e.SavePCM(frame.SessionID, frame.Payload); err != nil {
+		if err := s.SavePCM(frame.SessionID, frame.Payload); err != nil {
 			return frame, err
 		}
 		log.Infof(
@@ -72,22 +72,22 @@ func (e *MockEngine) Process(ctx context.Context, frame media.Frame) (media.Fram
 			frame.Direction,
 			frame.Format.Codec,
 			len(frame.Payload),
-			e.filePath(frame.SessionID),
+			s.filePath(frame.SessionID),
 		)
 	}
 	return frame, nil
 }
 
 // SavePCM 把 PCM 数据追加写入该 client 对应的文件。
-func (e *MockEngine) SavePCM(clientID string, pcm []byte) error {
+func (s *MockStage) SavePCM(clientID string, pcm []byte) error {
 	if len(pcm) == 0 {
 		return nil
 	}
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	file, err := e.fileLocked(clientID)
+	file, err := s.fileLocked(clientID)
 	if err != nil {
 		return err
 	}
@@ -97,56 +97,56 @@ func (e *MockEngine) SavePCM(clientID string, pcm []byte) error {
 	return nil
 }
 
-// Close 关闭语音增强引擎持有的所有 PCM 文件。
-func (e *MockEngine) Close(ctx context.Context) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+// Close 关闭语音增强 stage 持有的所有 PCM 文件。
+func (s *MockStage) Close(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	var firstErr error
-	for clientID, file := range e.files {
+	for clientID, file := range s.files {
 		if err := file.Close(); err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("close PCM file failed client=%s: %w", clientID, err)
 		}
-		delete(e.files, clientID)
+		delete(s.files, clientID)
 	}
 	return firstErr
 }
 
 // CloseSession 关闭指定 client 对应的 PCM 文件。
-func (e *MockEngine) CloseSession(clientID string) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+func (s *MockStage) CloseSession(clientID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	file := e.files[clientID]
+	file := s.files[clientID]
 	if file == nil {
 		return nil
 	}
-	delete(e.files, clientID)
+	delete(s.files, clientID)
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("close PCM file failed: %w", err)
 	}
 	return nil
 }
 
-// fileLocked 返回指定 client 的 PCM 输出文件，调用方必须持有 e.mu。
-func (e *MockEngine) fileLocked(clientID string) (*os.File, error) {
-	file := e.files[clientID]
+// fileLocked 返回指定 client 的 PCM 输出文件，调用方必须持有 s.mu。
+func (s *MockStage) fileLocked(clientID string) (*os.File, error) {
+	file := s.files[clientID]
 	if file != nil {
 		return file, nil
 	}
 
-	path := e.filePath(clientID)
+	path := s.filePath(clientID)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, pcmOutputFilePerm)
 	if err != nil {
 		return nil, fmt.Errorf("open PCM file failed: %w", err)
 	}
-	e.files[clientID] = file
+	s.files[clientID] = file
 	return file, nil
 }
 
 // filePath 返回指定 client 的 PCM 输出文件路径。
-func (e *MockEngine) filePath(clientID string) string {
-	return filepath.Join(e.outputDir, safeFileName(clientID)+".pcm")
+func (s *MockStage) filePath(clientID string) string {
+	return filepath.Join(s.outputDir, safeFileName(clientID)+".pcm")
 }
 
 // safeFileName 将客户端标识转换为可用作文件名的安全字符串。

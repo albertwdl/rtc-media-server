@@ -9,7 +9,7 @@ import (
 	"rtc-media-server/internal/media"
 )
 
-// TestMockStageProcessPassesFrameThrough 验证 VAD mock 透传媒体帧。
+// TestMockStageProcessPassesFrameThrough 验证 VAD mock stage 透传媒体帧。
 func TestMockStageProcessPassesFrameThrough(t *testing.T) {
 	stage := NewMockStage()
 	frame := media.Frame{
@@ -43,7 +43,7 @@ func TestMockStageProcessPassesFrameThrough(t *testing.T) {
 	}
 }
 
-// TestMockStageEmitsSilenceTimeout 验证 VAD mock 能上报静音超时事件。
+// TestMockStageEmitsSilenceTimeout 验证 VAD mock stage 能上报静音超时事件。
 func TestMockStageEmitsSilenceTimeout(t *testing.T) {
 	stage := NewMockStageWithTimeouts(2*time.Second, 3*time.Second)
 	eventCh := make(chan media.StageEvent, 1)

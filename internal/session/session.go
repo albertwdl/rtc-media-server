@@ -7,14 +7,14 @@ import (
 	"time"
 
 	"rtc-media-server/internal/application"
-	"rtc-media-server/internal/audioenhancement"
 	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/controller"
 	"rtc-media-server/internal/log"
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/pipeline"
 	"rtc-media-server/internal/pipeline/stages"
-	"rtc-media-server/internal/vad"
+	audioenhancement "rtc-media-server/internal/pipeline/stages/audioenhancement"
+	"rtc-media-server/internal/pipeline/stages/vad"
 )
 
 const (
@@ -125,7 +125,7 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 		},
 	})
 
-	engine, err := audioenhancement.NewMockEngine("")
+	engine, err := audioenhancement.NewMockStage("")
 	if err != nil {
 		cleanup("create audio enhancement failed")
 		return nil, err
