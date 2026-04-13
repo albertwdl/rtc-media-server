@@ -72,6 +72,13 @@ func main() {
 				sess.OnEvent(ctx, event)
 			}
 		},
+		OnResponseAudio: func(ctx context.Context, clientID string, frame media.Frame) error {
+			sess, ok := sessionManager.Get(clientID)
+			if !ok {
+				return nil
+			}
+			return sess.EnqueueDownlink(ctx, frame)
+		},
 		OnError: func(ctx context.Context, clientID string, err error) {
 			if sess, ok := sessionManager.Get(clientID); ok {
 				sess.OnError(ctx, err)
@@ -88,7 +95,7 @@ func main() {
 	defer stop()
 
 	addr := net.JoinHostPort(cfg.Listen, strconv.Itoa(cfg.Port))
-	log.Infof("rtc-media-server demo started stream_addr=wss://%s%s", addr, cfg.StreamPath)
+	log.Infof("rtc-media-server demo started realtime_addr=wss://%s%s", addr, cfg.StreamPath)
 	if err := server.Start(ctx); err != nil {
 		fatal("WebSocket server exited", err)
 	}

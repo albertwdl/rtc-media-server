@@ -19,7 +19,7 @@ const (
 
 var alawSegmentEnds = [...]int{0x1F, 0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF, 0x7FF, 0xFFF}
 
-// DecodeALawToPCM 将 G.711 A-law 字节流解码为 signed 16-bit little-endian PCM。
+// DecodeALawToPCM 将 G.711 A-law byte 流解码为 signed 16-bit little-endian PCM。
 func DecodeALawToPCM(alaw []byte) []byte {
 	pcm := make([]byte, len(alaw)*pcm16BytesPerSample)
 	for i, sample := range alaw {
@@ -29,7 +29,7 @@ func DecodeALawToPCM(alaw []byte) []byte {
 }
 
 // EncodePCMToALaw 将 signed 16-bit little-endian PCM 编码为 G.711 A-law。
-// 如果输入长度为奇数，最后一个无法组成 16-bit 采样的字节会被忽略。
+// 如果输入长度为奇数，最后一个无法组成 16-bit 采样的byte会被忽略。
 func EncodePCMToALaw(pcm []byte) []byte {
 	if len(pcm) < pcm16BytesPerSample {
 		return nil

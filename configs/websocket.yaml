@@ -1,7 +1,7 @@
 websocket:
   listen: "0.0.0.0"
   port: 8443
-  stream_path: "/v1/stream"
+  stream_path: "/v1/realtime"
   client_id_header: "X-Hardware-Id"
   tls:
     cert_file: "configs/certs/dev-server.crt"

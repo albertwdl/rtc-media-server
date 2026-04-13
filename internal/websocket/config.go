@@ -13,8 +13,7 @@ import (
 )
 
 const (
-	DefaultStreamPath     = "/v1/stream"
-	RealtimeStreamPath    = "/v1/realtime"
+	DefaultStreamPath     = "/v1/realtime"
 	DefaultClientIDHeader = "X-Hardware-Id"
 	DefaultListen         = "0.0.0.0"
 	DefaultPort           = 8443

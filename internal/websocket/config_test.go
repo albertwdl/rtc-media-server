@@ -24,7 +24,7 @@ func TestLoadConfig(t *testing.T) {
 websocket:
   listen: "127.0.0.1"
   port: 9443
-  stream_path: "/v1/stream"
+  stream_path: "/v1/realtime"
   client_id_header: "X-Hardware-Id"
   tls:
     cert_file: "` + cert + `"
@@ -46,7 +46,7 @@ websocket:
 		t.Fatalf("LoadConfig returned error: %v", err)
 	}
 
-	if cfg.StreamPath != "/v1/stream" {
+	if cfg.StreamPath != "/v1/realtime" {
 		t.Fatalf("StreamPath = %q", cfg.StreamPath)
 	}
 	if cfg.ClientIDHeader != "X-Hardware-Id" {

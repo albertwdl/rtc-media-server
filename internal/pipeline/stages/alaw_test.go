@@ -30,7 +30,7 @@ func TestALawDecodeProducesPCM16(t *testing.T) {
 	}
 }
 
-// TestALawEncodeDropsTrailingOddByte 验证 A-law 编码 stage 忽略奇数字节尾部。
+// TestALawEncodeDropsTrailingOddByte 验证 A-law 编码 stage 忽略奇数 byte尾部。
 func TestALawEncodeDropsTrailingOddByte(t *testing.T) {
 	frame, err := NewALawEncode().Process(context.Background(), media.Frame{
 		Payload: []byte{0x01, 0x02, 0x03},

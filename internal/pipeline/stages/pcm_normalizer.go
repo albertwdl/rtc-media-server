@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	// PCM16BytesPerSample 是 PCM16 单个采样占用的字节数。
+	// PCM16BytesPerSample 是 PCM16 单个采样占用的bytes。
 	PCM16BytesPerSample = 2
 	minOutputSamples    = 1
 )
@@ -64,7 +64,7 @@ func (n *PCM16Normalizer) Process(ctx context.Context, frame media.Frame) (media
 // Close 关闭 PCM 归一化 stage。
 func (n *PCM16Normalizer) Close(ctx context.Context) error { return nil }
 
-// bytesToSamples 将 little-endian PCM16 字节转换为采样数组。
+// bytesToSamples 将 little-endian PCM16 bytes转换为采样数组。
 func bytesToSamples(payload []byte) []int16 {
 	samples := make([]int16, len(payload)/PCM16BytesPerSample)
 	for i := range samples {
@@ -73,7 +73,7 @@ func bytesToSamples(payload []byte) []int16 {
 	return samples
 }
 
-// samplesToBytes 将 PCM16 采样数组转换为 little-endian 字节。
+// samplesToBytes 将 PCM16 采样数组转换为 little-endian bytes。
 func samplesToBytes(samples []int16) []byte {
 	payload := make([]byte, len(samples)*PCM16BytesPerSample)
 	for i, sample := range samples {

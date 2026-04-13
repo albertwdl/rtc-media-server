@@ -8,7 +8,7 @@ import (
 	"rtc-media-server/internal/media"
 )
 
-// ALawDecodeStage 将 G.711 A-law 字节解码为 PCM16LE。
+// ALawDecodeStage 将 G.711 A-law bytes解码为 PCM16LE。
 type ALawDecodeStage struct {
 	target media.Format
 }

@@ -8,7 +8,7 @@ import (
 	"rtc-media-server/internal/media"
 )
 
-// Base64DecodeStage 将 base64 文本 payload 解码为 G.711 A-law 字节。
+// Base64DecodeStage 将 base64 文本 payload 解码为 G.711 A-law bytes。
 type Base64DecodeStage struct{}
 
 // NewBase64Decode 创建 base64 解码 stage。
@@ -34,7 +34,7 @@ func (s *Base64DecodeStage) Process(ctx context.Context, frame media.Frame) (med
 // Close 关闭 base64 解码 stage。
 func (s *Base64DecodeStage) Close(ctx context.Context) error { return nil }
 
-// Base64EncodeStage 将 G.711 A-law 字节编码为 base64 文本 payload。
+// Base64EncodeStage 将 G.711 A-law bytes编码为 base64 文本 payload。
 type Base64EncodeStage struct{}
 
 // NewBase64Encode 创建 base64 编码 stage。

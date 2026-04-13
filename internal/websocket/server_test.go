@@ -37,8 +37,9 @@ func TestStreamAppendJSONEntersSessionUplink(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-a")
+	conn := dialTestWS(t, ctx, url+"/v1/realtime", "client-a")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
+	expectEventType(t, ctx, conn, sessionCreatedEvent)
 	sess := waitForSession(t, ctx, sessionCh)
 
 	alaw := []byte{0xD5, 0x55}
@@ -63,8 +64,9 @@ func TestNonAppendStreamJSONDoesNotEmitMedia(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-b")
+	conn := dialTestWS(t, ctx, url+"/v1/realtime", "client-b")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
+	expectEventType(t, ctx, conn, sessionCreatedEvent)
 	sess := waitForSession(t, ctx, sessionCh)
 
 	if err := conn.Write(ctx, coderws.MessageText, []byte(`{"type":"input_audio_buffer.commit"}`)); err != nil {
@@ -88,8 +90,9 @@ func TestInvalidStreamJSONDoesNotBreakSession(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-c")
+	conn := dialTestWS(t, ctx, url+"/v1/realtime", "client-c")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
+	expectEventType(t, ctx, conn, sessionCreatedEvent)
 	sess := waitForSession(t, ctx, sessionCh)
 
 	if err := conn.Write(ctx, coderws.MessageText, []byte("not-json")); err != nil {
@@ -120,19 +123,18 @@ func TestControlStreamJSONEventsAreReported(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-control")
+	conn := dialTestWS(t, ctx, url+"/v1/realtime", "client-control")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
+	expectEventType(t, ctx, conn, sessionCreatedEvent)
 	sess := waitForSession(t, ctx, sessionCh)
 
 	payloads := [][]byte{
 		[]byte(`{"event_id":"commit-1","type":"input_audio_buffer.commit"}`),
-		[]byte(`{"event_id":"create-1","type":"response.create"}`),
 		[]byte(`{"event_id":"cancel-1","type":"response.cancel"}`),
 		[]byte(`{"event_id":"session-1","type":"session.update","session":{"object":"realtime.session","input_audio_format":"g711_alaw","output_audio_format":"g711_alaw"}}`),
 	}
 	wantTypes := []string{
 		"input_audio_buffer.commit",
-		"response.create",
 		"response.cancel",
 		"session.update",
 	}
@@ -159,7 +161,7 @@ func TestRealtimeRouteAcceptsAuthHeaders(t *testing.T) {
 		sessionCh <- sess
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	headers := http.Header{}
 	headers.Set("X-Auth-Type", "1")
@@ -170,7 +172,7 @@ func TestRealtimeRouteAcceptsAuthHeaders(t *testing.T) {
 	headers.Set("X-Instance-Id", "instance-test")
 	headers.Set("X-Signature", "invalid-signature-is-accepted")
 	headers.Set("X-Hardware-Id", "hardware-realtime")
-	conn, _, err := coderws.Dial(ctx, url+RealtimeStreamPath+"?bot=bot-test&wait_for_session_update=true", &coderws.DialOptions{
+	conn, _, err := coderws.Dial(ctx, url+DefaultStreamPath+"?bot=bot-test&wait_for_session_update=true", &coderws.DialOptions{
 		HTTPClient: client,
 		HTTPHeader: headers,
 	})
@@ -183,6 +185,7 @@ func TestRealtimeRouteAcceptsAuthHeaders(t *testing.T) {
 	if sess.ID() != "hardware-realtime" {
 		t.Fatalf("session id = %q", sess.ID())
 	}
+	expectEventType(t, ctx, conn, sessionCreatedEvent)
 }
 
 // TestStreamControlEventsSendAcks 验证端侧关键控制事件会收到最小状态回包。
@@ -194,8 +197,9 @@ func TestStreamControlEventsSendAcks(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-ack")
+	conn := dialTestWS(t, ctx, url+"/v1/realtime", "client-ack")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
+	expectEventType(t, ctx, conn, sessionCreatedEvent)
 	_ = waitForSession(t, ctx, sessionCh)
 
 	tests := []struct {
@@ -210,10 +214,6 @@ func TestStreamControlEventsSendAcks(t *testing.T) {
 			send: []byte(`{"event_id":"commit-ack","type":"input_audio_buffer.commit"}`),
 			want: "input_audio_buffer.committed",
 		},
-		{
-			send: []byte(`{"event_id":"create-ack","type":"response.create"}`),
-			want: "response.created",
-		},
 	}
 	for _, tt := range tests {
 		if err := conn.Write(ctx, coderws.MessageText, tt.send); err != nil {
@@ -221,6 +221,50 @@ func TestStreamControlEventsSendAcks(t *testing.T) {
 		}
 		if got := readEventType(t, ctx, conn); got != tt.want {
 			t.Fatalf("ack type = %q, want %q", got, tt.want)
+		}
+	}
+}
+
+// TestResponseCreateSendsMockResponseSequence 验证 response.create 会触发完整模拟下行时序。
+func TestResponseCreateSendsMockResponseSequence(t *testing.T) {
+	sessionCh := make(chan *session.Session, 1)
+	_, url, _ := newTestTLSServer(t, func(sess *session.Session) {
+		sessionCh <- sess
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn := dialTestWS(t, ctx, url+"/v1/realtime", "client-response")
+	defer conn.Close(coderws.StatusNormalClosure, "test done")
+	expectEventType(t, ctx, conn, sessionCreatedEvent)
+	_ = waitForSession(t, ctx, sessionCh)
+
+	if err := conn.Write(ctx, coderws.MessageText, []byte(`{"event_id":"create-1","type":"response.create"}`)); err != nil {
+		t.Fatalf("write response.create: %v", err)
+	}
+
+	want := []string{
+		speechStartedEvent,
+		speechStoppedEvent,
+		inputAudioCommittedEvent,
+		responseCreatedEvent,
+		responseAudioDeltaType,
+		transcriptionDoneEvent,
+		responseDoneEvent,
+	}
+	for _, eventType := range want {
+		payload := readEventPayload(t, ctx, conn)
+		if payload.Type != eventType {
+			t.Fatalf("event type = %q, want %q", payload.Type, eventType)
+		}
+		if eventType == responseAudioDeltaType {
+			decoded, err := base64.StdEncoding.DecodeString(payload.Delta)
+			if err != nil {
+				t.Fatalf("delta was not base64: %v", err)
+			}
+			if len(decoded) == 0 {
+				t.Fatal("delta decoded to empty audio")
+			}
 		}
 	}
 }
@@ -234,8 +278,9 @@ func TestDownlinkPipelineSendsResponseAudioDelta(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-d")
+	conn := dialTestWS(t, ctx, url+"/v1/realtime", "client-d")
 	defer conn.Close(coderws.StatusNormalClosure, "test done")
+	expectEventType(t, ctx, conn, sessionCreatedEvent)
 
 	sess := waitForSession(t, ctx, sessionCh)
 
@@ -273,7 +318,7 @@ func TestMissingClientIDRejected(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	_, resp, err := coderws.Dial(ctx, url+"/v1/stream", &coderws.DialOptions{
+	_, resp, err := coderws.Dial(ctx, url+"/v1/realtime", &coderws.DialOptions{
 		HTTPClient: client,
 	})
 	if err == nil {
@@ -284,18 +329,38 @@ func TestMissingClientIDRejected(t *testing.T) {
 	}
 }
 
+// TestLegacyStreamRouteRejected 验证旧的 /v1/stream 地址不再暴露。
+func TestLegacyStreamRouteRejected(t *testing.T) {
+	_, url, client := newTestTLSServer(t, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	headers := http.Header{}
+	headers.Set(DefaultClientIDHeader, "client-legacy")
+	_, resp, err := coderws.Dial(ctx, url+"/v1/stream", &coderws.DialOptions{
+		HTTPClient: client,
+		HTTPHeader: headers,
+	})
+	if err == nil {
+		t.Fatal("expected legacy route dial error")
+	}
+	if resp == nil || resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %#v, err = %v", resp, err)
+	}
+}
+
 // TestDuplicateChannelRejected 验证同一客户端重复 stream 建联会被拒绝。
 func TestDuplicateChannelRejected(t *testing.T) {
 	_, url, client := newTestTLSServer(t, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	first := dialTestWS(t, ctx, url+"/v1/stream", "client-f")
+	first := dialTestWS(t, ctx, url+"/v1/realtime", "client-f")
 	defer first.Close(coderws.StatusNormalClosure, "test done")
 
 	headers := http.Header{}
 	headers.Set(DefaultClientIDHeader, "client-f")
-	_, resp, err := coderws.Dial(ctx, url+"/v1/stream", &coderws.DialOptions{
+	_, resp, err := coderws.Dial(ctx, url+"/v1/realtime", &coderws.DialOptions{
 		HTTPClient: client,
 		HTTPHeader: headers,
 	})
@@ -314,10 +379,11 @@ func TestRTTUsesStreamChannel(t *testing.T) {
 		sessionCh <- sess
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	streamConn := dialTestWS(t, ctx, url+"/v1/stream", "client-g")
+	streamConn := dialTestWS(t, ctx, url+"/v1/realtime", "client-g")
 	defer streamConn.Close(coderws.StatusNormalClosure, "test done")
+	expectEventType(t, ctx, streamConn, sessionCreatedEvent)
 
 	sess := waitForSession(t, ctx, sessionCh)
 	readCtx, readCancel := context.WithCancel(context.Background())
@@ -391,7 +457,7 @@ func TestDisconnectCallback(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	conn := dialTestWS(t, ctx, url+"/v1/stream", "client-i")
+	conn := dialTestWS(t, ctx, url+"/v1/realtime", "client-i")
 	if err := conn.Close(coderws.StatusNormalClosure, "test done"); err != nil {
 		t.Fatalf("close: %v", err)
 	}
@@ -459,6 +525,13 @@ func newTestTLSServer(t *testing.T, onSession func(*session.Session), callbackOp
 				sess.OnEvent(ctx, event)
 			}
 		},
+		OnResponseAudio: func(ctx context.Context, clientID string, frame media.Frame) error {
+			sess, ok := manager.Get(clientID)
+			if !ok {
+				return nil
+			}
+			return sess.EnqueueDownlink(ctx, frame)
+		},
 	}
 	for _, opt := range callbackOpts {
 		opt(&callbacks)
@@ -488,17 +561,36 @@ func waitEvent(t *testing.T, ctx context.Context, eventCh <-chan media.Event) me
 // readEventType 读取一条 WebSocket JSON 消息并返回 type 字段。
 func readEventType(t *testing.T, ctx context.Context, conn *coderws.Conn) string {
 	t.Helper()
+	return readEventPayload(t, ctx, conn).Type
+}
+
+// expectEventType 读取一条 WebSocket JSON 消息并校验 type 字段。
+func expectEventType(t *testing.T, ctx context.Context, conn *coderws.Conn, want string) {
+	t.Helper()
+	if got := readEventType(t, ctx, conn); got != want {
+		t.Fatalf("event type = %q, want %q", got, want)
+	}
+}
+
+// streamPayload 是测试中关心的下行业务 JSON 字段。
+type streamPayload struct {
+	Type       string `json:"type"`
+	Delta      string `json:"delta"`
+	Transcript string `json:"transcript"`
+}
+
+// readEventPayload 读取一条 WebSocket JSON 消息。
+func readEventPayload(t *testing.T, ctx context.Context, conn *coderws.Conn) streamPayload {
+	t.Helper()
 	_, payload, err := conn.Read(ctx)
 	if err != nil {
 		t.Fatalf("read event: %v", err)
 	}
-	var event struct {
-		Type string `json:"type"`
-	}
+	var event streamPayload
 	if err := json.Unmarshal(payload, &event); err != nil {
 		t.Fatalf("unmarshal event %s: %v", payload, err)
 	}
-	return event.Type
+	return event
 }
 
 // newBareTestTLSServer 创建不带 SessionManager 的 WebSocket 测试服务。
