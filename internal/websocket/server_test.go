@@ -312,6 +312,43 @@ func TestDownlinkPipelineSendsResponseAudioDelta(t *testing.T) {
 	}
 }
 
+// TestServiceMessageForwardsToClient 验证服务侧非媒体消息会经 Session 原样透传到端侧。
+func TestServiceMessageForwardsToClient(t *testing.T) {
+	sessionCh := make(chan *session.Session, 1)
+	_, url, _ := newTestTLSServer(t, func(sess *session.Session) {
+		sessionCh <- sess
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn := dialTestWS(t, ctx, url+"/v1/realtime", "client-text")
+	defer conn.Close(coderws.StatusNormalClosure, "test done")
+	expectEventType(t, ctx, conn, sessionCreatedEvent)
+	sess := waitForSession(t, ctx, sessionCh)
+
+	service, ok := sess.ServiceConnector().(interface {
+		PushMessage(context.Context, media.Message) error
+	})
+	if !ok {
+		t.Fatalf("service connector %T does not expose PushMessage", sess.ServiceConnector())
+	}
+	want := []byte(`{"type":"response.text.delta","text":"hello"}`)
+	if err := service.PushMessage(ctx, media.Message{
+		Type:    "response.text.delta",
+		Payload: want,
+	}); err != nil {
+		t.Fatalf("push service message: %v", err)
+	}
+
+	_, got, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read service message: %v", err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("message = %s, want %s", got, want)
+	}
+}
+
 // TestMissingClientIDRejected 验证缺少客户端 ID Header 时拒绝建联。
 func TestMissingClientIDRejected(t *testing.T) {
 	_, url, client := newTestTLSServer(t, nil)

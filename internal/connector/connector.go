@@ -14,7 +14,9 @@ type ClientConnector interface {
 	Protocol() string
 
 	BindInput(input media.Input) error
+	BindMessageInput(input media.MessageInput) error
 	SendData(ctx context.Context, frame media.Frame) error
+	SendMessage(ctx context.Context, msg media.Message) error
 
 	MeasureRTT(ctx context.Context) (time.Duration, error)
 	Close(ctx context.Context, reason string) error
@@ -28,7 +30,9 @@ type ServiceConnector interface {
 	Protocol() string
 
 	BindInput(input media.Input) error
+	BindMessageInput(input media.MessageInput) error
 	SendData(ctx context.Context, frame media.Frame) error
+	SendMessage(ctx context.Context, msg media.Message) error
 	Close(ctx context.Context, reason string) error
 	Done() <-chan struct{}
 }

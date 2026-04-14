@@ -51,6 +51,16 @@ type Frame struct {
 	Metadata  map[string]string
 }
 
+// Message 是 Connector 之间透传的非媒体业务消息。
+// 文本、控制 JSON 和错误事件不进入媒体 pipeline，而是由 Session 做桥接。
+type Message struct {
+	SessionID string
+	Direction Direction
+	Type      string
+	Payload   []byte
+	Metadata  map[string]string
+}
+
 // Event 表示协议适配 stage 上报的非媒体事件。
 // Raw 保留原始业务 payload，Fields 用于传递已经解析出的关键字段。
 type Event struct {
@@ -106,6 +116,19 @@ type OutputFunc func(ctx context.Context, frame Frame) error
 // SendData 调用函数型 Output 包装的发送函数。
 func (fn OutputFunc) SendData(ctx context.Context, frame Frame) error {
 	return fn(ctx, frame)
+}
+
+// MessageInput 表示非媒体消息输入端。
+type MessageInput interface {
+	PushMessage(ctx context.Context, msg Message) error
+}
+
+// MessageInputFunc 允许用函数快速实现 MessageInput。
+type MessageInputFunc func(ctx context.Context, msg Message) error
+
+// PushMessage 调用函数型 MessageInput 包装的推送函数。
+func (fn MessageInputFunc) PushMessage(ctx context.Context, msg Message) error {
+	return fn(ctx, msg)
 }
 
 // Pipeline 定义媒体处理管线的最小抽象。

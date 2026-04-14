@@ -167,8 +167,16 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 		cleanup("bind service connector input failed")
 		return nil, err
 	}
+	if err := service.BindMessageInput(media.MessageInputFunc(s.OnServiceMessage)); err != nil {
+		cleanup("bind service connector message input failed")
+		return nil, err
+	}
 	if err := client.BindInput(s.uplink); err != nil {
 		cleanup("bind client connector input failed")
+		return nil, err
+	}
+	if err := client.BindMessageInput(media.MessageInputFunc(s.OnClientMessage)); err != nil {
+		cleanup("bind client connector message input failed")
 		return nil, err
 	}
 
@@ -332,6 +340,26 @@ func (s *Session) Close(ctx context.Context, reason string) error {
 // OnEvent 接收 Connector 上报的非媒体 stream 事件。
 func (s *Session) OnEvent(ctx context.Context, event media.Event) {
 	log.Infof("client_id=%s connector event event_type=%s bytes=%d", s.id, event.Type, len(event.Raw))
+}
+
+// OnClientMessage 把端侧非媒体消息桥接到服务侧 Connector。
+func (s *Session) OnClientMessage(ctx context.Context, msg media.Message) error {
+	msg.SessionID = s.id
+	msg.Direction = media.DirectionUplink
+	if s.serviceConnector == nil {
+		return nil
+	}
+	return s.serviceConnector.SendMessage(ctx, msg)
+}
+
+// OnServiceMessage 把服务侧非媒体消息桥接到端侧 Connector。
+func (s *Session) OnServiceMessage(ctx context.Context, msg media.Message) error {
+	msg.SessionID = s.id
+	msg.Direction = media.DirectionDownlink
+	if s.clientConnector == nil {
+		return nil
+	}
+	return s.clientConnector.SendMessage(ctx, msg)
 }
 
 // OnError 记录 Session 范围内的错误。

@@ -70,6 +70,7 @@ type clientConnector struct {
 	stream        *channelConn
 	streamPending bool
 	dataInput     media.Input
+	msgInput      media.MessageInput
 	done          chan struct{}
 	closeOnce     sync.Once
 
@@ -319,6 +320,7 @@ func (s *Server) handleInputAudioAppend(ctx context.Context, client *clientConne
 func (s *Server) handleInputAudioCommit(ctx context.Context, client *clientConnector, event streamEvent) {
 	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
 	s.reportEvent(ctx, client.id, event)
+	client.pushMessage(ctx, event)
 	if err := client.sendStreamEvent(ctx, inputAudioCommittedEvent); err != nil {
 		s.reportError(ctx, client.id, fmt.Errorf("send input audio committed: %w", err))
 	}
@@ -328,6 +330,7 @@ func (s *Server) handleInputAudioCommit(ctx context.Context, client *clientConne
 func (s *Server) handleResponseCreate(ctx context.Context, client *clientConnector, event streamEvent) {
 	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
 	s.reportEvent(ctx, client.id, event)
+	client.pushMessage(ctx, event)
 	s.startMockResponse(ctx, client)
 }
 
@@ -335,6 +338,7 @@ func (s *Server) handleResponseCreate(ctx context.Context, client *clientConnect
 func (s *Server) handleResponseCancel(ctx context.Context, client *clientConnector, event streamEvent) {
 	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
 	s.reportEvent(ctx, client.id, event)
+	client.pushMessage(ctx, event)
 	client.cancelMockResponse()
 }
 
@@ -342,6 +346,7 @@ func (s *Server) handleResponseCancel(ctx context.Context, client *clientConnect
 func (s *Server) handleSessionUpdate(ctx context.Context, client *clientConnector, event streamEvent) {
 	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
 	s.reportEvent(ctx, client.id, event)
+	client.pushMessage(ctx, event)
 	if err := client.sendStreamEvent(ctx, sessionUpdatedEvent); err != nil {
 		s.reportError(ctx, client.id, fmt.Errorf("send session updated: %w", err))
 	}
@@ -351,6 +356,7 @@ func (s *Server) handleSessionUpdate(ctx context.Context, client *clientConnecto
 func (s *Server) handleUnknownStreamEvent(ctx context.Context, client *clientConnector, event streamEvent) {
 	log.Warnf("client_id=%s websocket stream event ignored event_type=%s event_id=%s", client.id, event.Type, event.EventID)
 	s.reportEvent(ctx, client.id, event)
+	client.pushMessage(ctx, event)
 }
 
 // reserveClient 为指定客户端预留 stream 连接，防止同一客户端重复建联。
@@ -459,6 +465,14 @@ func (client *clientConnector) BindInput(input media.Input) error {
 	return nil
 }
 
+// BindMessageInput 绑定客户端收到非媒体消息后要推送到的输入端。
+func (client *clientConnector) BindMessageInput(input media.MessageInput) error {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	client.msgInput = input
+	return nil
+}
+
 // SendData 把 pipeline 输出的 base64 音频帧打包成 JSON 后写回 stream 连接。
 func (client *clientConnector) SendData(ctx context.Context, frame media.Frame) error {
 	if frame.Format.Codec != media.CodecBase64 {
@@ -473,6 +487,11 @@ func (client *clientConnector) SendData(ctx context.Context, frame media.Frame) 
 	}
 	client.markMockResponseAudioSent(frame)
 	return nil
+}
+
+// SendMessage 把非媒体消息作为 JSON/text 直接写回 stream 连接。
+func (client *clientConnector) SendMessage(ctx context.Context, msg media.Message) error {
+	return client.sendStreamPayload(ctx, msg.Payload)
 }
 
 // sendStreamEvent 向端侧发送不带额外 payload 的 stream 控制事件。
@@ -771,6 +790,35 @@ func (client *clientConnector) clearDataInput() {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	client.dataInput = nil
+	client.msgInput = nil
+}
+
+// boundMessageInput 返回当前客户端绑定的非媒体消息输入端。
+func (client *clientConnector) boundMessageInput() media.MessageInput {
+	client.mu.RLock()
+	defer client.mu.RUnlock()
+	return client.msgInput
+}
+
+// pushMessage 把 stream 控制事件转交给绑定的非媒体消息输入端。
+func (client *clientConnector) pushMessage(ctx context.Context, event streamEvent) {
+	input := client.boundMessageInput()
+	if input == nil {
+		return
+	}
+	msg := media.Message{
+		SessionID: client.id,
+		Direction: media.DirectionUplink,
+		Type:      event.Type,
+		Payload:   append([]byte(nil), event.Raw...),
+		Metadata: map[string]string{
+			"event_id": event.EventID,
+			"source":   "websocket_stream",
+		},
+	}
+	if err := input.PushMessage(ctx, msg); err != nil {
+		client.server.reportError(ctx, client.id, err)
+	}
 }
 
 // markMockResponseAudioSent 标记模拟回复音频已经写入 stream。

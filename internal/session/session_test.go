@@ -67,6 +67,59 @@ func TestSessionDownlinkPipelineConsumesToClient(t *testing.T) {
 	}
 }
 
+// TestSessionMessageBridge 验证非媒体消息只通过 Session 桥接，不进入媒体 pipeline。
+func TestSessionMessageBridge(t *testing.T) {
+	client := &testClientConnector{
+		id:       "client-msg",
+		done:     make(chan struct{}),
+		messages: make(chan media.Message, 1),
+	}
+	sess, err := NewSession(context.Background(), testConfig(), client)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer sess.Close(context.Background(), "test done")
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	if client.msgInput == nil {
+		t.Fatal("client BindMessageInput did not bind message input")
+	}
+	if err := client.msgInput.PushMessage(ctx, media.Message{
+		Type:    "response.create",
+		Payload: []byte(`{"type":"response.create"}`),
+	}); err != nil {
+		t.Fatalf("push client message: %v", err)
+	}
+	waitForServiceMessageCount(t, ctx, sess, 1)
+
+	service, ok := sess.ServiceConnector().(interface {
+		PushMessage(context.Context, media.Message) error
+	})
+	if !ok {
+		t.Fatalf("service connector %T does not expose PushMessage", sess.ServiceConnector())
+	}
+	if err := service.PushMessage(ctx, media.Message{
+		Type:    "response.text.delta",
+		Payload: []byte(`{"type":"response.text.delta","text":"ok"}`),
+	}); err != nil {
+		t.Fatalf("push service message: %v", err)
+	}
+
+	select {
+	case msg := <-client.messages:
+		if msg.Type != "response.text.delta" {
+			t.Fatalf("message type = %q", msg.Type)
+		}
+		if msg.Direction != media.DirectionDownlink {
+			t.Fatalf("message direction = %q", msg.Direction)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for client message")
+	}
+}
+
 // TestManagerAttachReusesExistingSession 验证 Manager 只为同一客户端创建一次 Session。
 func TestManagerAttachReusesExistingSession(t *testing.T) {
 	manager := NewManager(testConfig())
@@ -149,7 +202,9 @@ type testClientConnector struct {
 	id       string
 	done     chan struct{}
 	input    media.Input
+	msgInput media.MessageInput
 	consumed chan media.Frame
+	messages chan media.Message
 	closed   bool
 	mu       sync.Mutex
 }
@@ -166,11 +221,29 @@ func (c *testClientConnector) BindInput(input media.Input) error {
 	return nil
 }
 
+// BindMessageInput 绑定测试客户端收到非媒体消息后要推送到的输入端。
+func (c *testClientConnector) BindMessageInput(input media.MessageInput) error {
+	c.msgInput = input
+	return nil
+}
+
 // SendData 记录测试下行媒体帧。
 func (c *testClientConnector) SendData(ctx context.Context, frame media.Frame) error {
 	if c.consumed != nil {
 		select {
 		case c.consumed <- frame:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+// SendMessage 记录测试下行非媒体消息。
+func (c *testClientConnector) SendMessage(ctx context.Context, msg media.Message) error {
+	if c.messages != nil {
+		select {
+		case c.messages <- msg:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -196,3 +269,24 @@ func (c *testClientConnector) Close(ctx context.Context, reason string) error {
 
 // Done 返回测试客户端关闭通知。
 func (c *testClientConnector) Done() <-chan struct{} { return c.done }
+
+// waitForServiceMessageCount 等待 mock service connector 消费到指定非媒体消息数。
+func waitForServiceMessageCount(t *testing.T, ctx context.Context, sess *Session, want uint64) {
+	t.Helper()
+	counter, ok := sess.ServiceConnector().(interface{ MessageCount() uint64 })
+	if !ok {
+		t.Fatalf("service connector %T does not expose MessageCount", sess.ServiceConnector())
+	}
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if got := counter.MessageCount(); got >= want {
+			return
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for service message count %d, got %d", want, counter.MessageCount())
+		}
+	}
+}
