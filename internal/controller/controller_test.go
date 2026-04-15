@@ -65,6 +65,37 @@ func TestControllerSilenceTimeoutClosesSession(t *testing.T) {
 	}
 }
 
+// TestControllerForwardsSpeechEvents 验证语音起止事件会转发给 Session 仲裁层。
+func TestControllerForwardsSpeechEvents(t *testing.T) {
+	events := make(chan media.StageEvent, 2)
+	ctrl := New(Config{}, Dependencies{
+		SessionID: "client-speech",
+		OnStageEvent: func(ctx context.Context, event media.StageEvent) {
+			events <- event
+		},
+	})
+	defer ctrl.Close(context.Background())
+
+	for _, eventType := range []string{EventSpeechStarted, EventSpeechStopped} {
+		ctrl.Emit(context.Background(), media.StageEvent{
+			Type:      eventType,
+			Direction: media.DirectionUplink,
+			Stage:     "vad_mock",
+		})
+		select {
+		case event := <-events:
+			if event.SessionID != "client-speech" {
+				t.Fatalf("session id = %q", event.SessionID)
+			}
+			if event.Type != eventType {
+				t.Fatalf("event type = %q, want %q", event.Type, eventType)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for %s", eventType)
+		}
+	}
+}
+
 // TestControllerDropsReferenceAfterClose 验证 Controller 关闭后丢弃参考信号。
 func TestControllerDropsReferenceAfterClose(t *testing.T) {
 	ctrl := New(Config{ReferenceQueueSize: 1}, Dependencies{

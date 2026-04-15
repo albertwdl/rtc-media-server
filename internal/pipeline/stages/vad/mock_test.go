@@ -43,6 +43,48 @@ func TestMockStageProcessPassesFrameThrough(t *testing.T) {
 	}
 }
 
+// TestMockStageEmitsSpeechEventsOnce 验证 VAD mock 会在首个有效 PCM 帧上模拟语音起止事件。
+func TestMockStageEmitsSpeechEventsOnce(t *testing.T) {
+	stage := NewMockStage()
+	eventCh := make(chan media.StageEvent, 4)
+	stage.SetEventEmitter(func(ctx context.Context, event media.StageEvent) {
+		eventCh <- event
+	})
+	frame := media.Frame{
+		SessionID: "client-a",
+		Direction: media.DirectionUplink,
+		Payload:   []byte{0x01, 0x02},
+		Format:    media.DefaultPCM16Format(),
+	}
+
+	if _, err := stage.Process(context.Background(), frame); err != nil {
+		t.Fatalf("first Process: %v", err)
+	}
+	if _, err := stage.Process(context.Background(), frame); err != nil {
+		t.Fatalf("second Process: %v", err)
+	}
+
+	want := []string{controller.EventSpeechStarted, controller.EventSpeechStopped}
+	for _, eventType := range want {
+		select {
+		case event := <-eventCh:
+			if event.Type != eventType {
+				t.Fatalf("event type = %q, want %q", event.Type, eventType)
+			}
+			if event.Stage != stage.Name() {
+				t.Fatalf("stage = %q", event.Stage)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for %s", eventType)
+		}
+	}
+	select {
+	case event := <-eventCh:
+		t.Fatalf("unexpected extra event %q", event.Type)
+	default:
+	}
+}
+
 // TestMockStageEmitsSilenceTimeout 验证 VAD mock stage 能上报静音超时事件。
 func TestMockStageEmitsSilenceTimeout(t *testing.T) {
 	stage := NewMockStageWithTimeouts(2*time.Second, 3*time.Second)

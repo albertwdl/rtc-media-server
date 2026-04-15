@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -20,6 +21,11 @@ import (
 const (
 	// DefaultCloseTimeout 是 Session 关闭流程默认等待时长。
 	DefaultCloseTimeout = 3 * time.Second
+)
+
+const (
+	inputAudioSpeechStartedEvent = "input_audio_buffer.speech_started"
+	inputAudioSpeechStoppedEvent = "input_audio_buffer.speech_stopped"
 )
 
 // Config 定义 Session 管理和固定链路运行所需的参数。
@@ -123,6 +129,7 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 		CloseSession: func(ctx context.Context, reason string) error {
 			return s.Close(ctx, reason)
 		},
+		OnStageEvent: s.OnStageEvent,
 	})
 
 	engine, err := audioenhancement.NewMockStage("")
@@ -342,6 +349,31 @@ func (s *Session) OnEvent(ctx context.Context, event media.Event) {
 	log.Infof("client_id=%s connector event event_type=%s bytes=%d", s.id, event.Type, len(event.Raw))
 }
 
+// OnStageEvent 接收 Controller 转发的跨管线事件。
+func (s *Session) OnStageEvent(ctx context.Context, event media.StageEvent) {
+	eventType, ok := stageEventToClientMessageType(event.Type)
+	if !ok {
+		return
+	}
+	payload, err := packSimpleMessageEvent(eventType)
+	if err != nil {
+		s.OnError(ctx, fmt.Errorf("pack stage event: %w", err))
+		return
+	}
+	if err := s.OnServiceMessage(ctx, media.Message{
+		SessionID: s.id,
+		Direction: media.DirectionDownlink,
+		Type:      eventType,
+		Payload:   payload,
+		Metadata: map[string]string{
+			"stage":      event.Stage,
+			"stage_type": event.Type,
+		},
+	}); err != nil {
+		s.OnError(ctx, fmt.Errorf("send stage event: %w", err))
+	}
+}
+
 // OnClientMessage 把端侧非媒体消息桥接到服务侧 Connector。
 func (s *Session) OnClientMessage(ctx context.Context, msg media.Message) error {
 	msg.SessionID = s.id
@@ -372,4 +404,23 @@ func (s *Session) setErr(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.err = err
+}
+
+// stageEventToClientMessageType 将内部 stage 事件映射为端侧 stream 事件类型。
+func stageEventToClientMessageType(eventType string) (string, bool) {
+	switch eventType {
+	case controller.EventSpeechStarted:
+		return inputAudioSpeechStartedEvent, true
+	case controller.EventSpeechStopped:
+		return inputAudioSpeechStoppedEvent, true
+	default:
+		return "", false
+	}
+}
+
+// packSimpleMessageEvent 打包只包含 type 字段的下行消息。
+func packSimpleMessageEvent(eventType string) ([]byte, error) {
+	return json.Marshal(struct {
+		Type string `json:"type"`
+	}{Type: eventType})
 }

@@ -592,9 +592,6 @@ func (s *Server) startMockResponse(ctx context.Context, client *clientConnector)
 // runMockResponse 按联调文档下发一轮最小模拟回复事件。
 func (s *Server) runMockResponse(ctx context.Context, client *clientConnector, responseID uint64) error {
 	events := []string{
-		speechStartedEvent,
-		speechStoppedEvent,
-		inputAudioCommittedEvent,
 		responseCreatedEvent,
 	}
 	for _, eventType := range events {

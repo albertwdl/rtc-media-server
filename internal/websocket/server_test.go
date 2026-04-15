@@ -109,6 +109,33 @@ func TestInvalidStreamJSONDoesNotBreakSession(t *testing.T) {
 	waitForServiceCount(t, ctx, sess, 1)
 }
 
+// TestStreamAppendSendsSpeechEvents 验证上行音频触发 VAD mock 语音起止下行事件。
+func TestStreamAppendSendsSpeechEvents(t *testing.T) {
+	sessionCh := make(chan *session.Session, 1)
+	_, url, _ := newTestTLSServer(t, func(sess *session.Session) {
+		sessionCh <- sess
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn := dialTestWS(t, ctx, url+"/v1/realtime", "client-speech")
+	defer conn.Close(coderws.StatusNormalClosure, "test done")
+	expectEventType(t, ctx, conn, sessionCreatedEvent)
+	sess := waitForSession(t, ctx, sessionCh)
+
+	if err := conn.Write(ctx, coderws.MessageText, streamAppendJSON(t, []byte{0xD5, 0x55})); err != nil {
+		t.Fatalf("write stream: %v", err)
+	}
+	waitForServiceCount(t, ctx, sess, 1)
+
+	want := []string{speechStartedEvent, speechStoppedEvent}
+	for _, eventType := range want {
+		if got := readEventType(t, ctx, conn); got != eventType {
+			t.Fatalf("event type = %q, want %q", got, eventType)
+		}
+	}
+}
+
 // TestControlStreamJSONEventsAreReported 验证 stream 控制事件会被 Connector 识别并上报，但不会进入媒体 pipeline。
 func TestControlStreamJSONEventsAreReported(t *testing.T) {
 	sessionCh := make(chan *session.Session, 1)
@@ -244,9 +271,6 @@ func TestResponseCreateSendsMockResponseSequence(t *testing.T) {
 	}
 
 	want := []string{
-		speechStartedEvent,
-		speechStoppedEvent,
-		inputAudioCommittedEvent,
 		responseCreatedEvent,
 		responseAudioDeltaType,
 		transcriptionDoneEvent,

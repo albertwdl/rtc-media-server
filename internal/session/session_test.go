@@ -2,10 +2,12 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"testing"
 	"time"
 
+	"rtc-media-server/internal/controller"
 	"rtc-media-server/internal/media"
 )
 
@@ -117,6 +119,56 @@ func TestSessionMessageBridge(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("timed out waiting for client message")
+	}
+}
+
+// TestSessionStageSpeechEventsForwardToClient 验证 VAD 语音起止事件会转成端侧下行消息。
+func TestSessionStageSpeechEventsForwardToClient(t *testing.T) {
+	client := &testClientConnector{
+		id:       "client-speech",
+		done:     make(chan struct{}),
+		messages: make(chan media.Message, 2),
+	}
+	sess, err := NewSession(context.Background(), testConfig(), client)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer sess.Close(context.Background(), "test done")
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	sess.Controller().Emit(ctx, media.StageEvent{
+		SessionID: client.ID(),
+		Type:      controller.EventSpeechStarted,
+		Direction: media.DirectionUplink,
+		Stage:     "vad_mock",
+	})
+	sess.Controller().Emit(ctx, media.StageEvent{
+		SessionID: client.ID(),
+		Type:      controller.EventSpeechStopped,
+		Direction: media.DirectionUplink,
+		Stage:     "vad_mock",
+	})
+
+	want := []string{inputAudioSpeechStartedEvent, inputAudioSpeechStoppedEvent}
+	for _, eventType := range want {
+		select {
+		case msg := <-client.messages:
+			if msg.Type != eventType {
+				t.Fatalf("message type = %q, want %q", msg.Type, eventType)
+			}
+			var payload struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+				t.Fatalf("unmarshal message payload: %v", err)
+			}
+			if payload.Type != eventType {
+				t.Fatalf("payload type = %q, want %q", payload.Type, eventType)
+			}
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for %s", eventType)
+		}
 	}
 }
 

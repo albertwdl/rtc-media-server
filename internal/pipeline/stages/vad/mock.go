@@ -17,6 +17,7 @@ type MockStage struct {
 	initialSilenceLimit time.Duration
 	silenceLimit        time.Duration
 	count               atomic.Uint64
+	speechEmitted       atomic.Bool
 }
 
 // NewMockStage 创建 VAD mock stage。
@@ -57,7 +58,35 @@ func (s *MockStage) Process(ctx context.Context, frame media.Frame) (media.Frame
 		frame.Format.Codec,
 		len(frame.Payload),
 	)
+	s.emitMockSpeechEvents(ctx, frame)
 	return frame, nil
+}
+
+// emitMockSpeechEvents 在首个有效 PCM 帧上模拟一轮语音开始和停止事件。
+func (s *MockStage) emitMockSpeechEvents(ctx context.Context, frame media.Frame) {
+	if s.emit == nil || len(frame.Payload) == 0 {
+		return
+	}
+	if frame.Format.Codec != media.CodecPCM16LE {
+		return
+	}
+	if !s.speechEmitted.CompareAndSwap(false, true) {
+		return
+	}
+	s.emit(ctx, media.StageEvent{
+		SessionID: frame.SessionID,
+		Type:      controller.EventSpeechStarted,
+		Direction: frame.Direction,
+		Stage:     s.Name(),
+		FrameSeq:  frame.Seq,
+	})
+	s.emit(ctx, media.StageEvent{
+		SessionID: frame.SessionID,
+		Type:      controller.EventSpeechStopped,
+		Direction: frame.Direction,
+		Stage:     s.Name(),
+		FrameSeq:  frame.Seq,
+	})
 }
 
 // EmitSilenceTimeout 供测试或后续真实 VAD 定时器触发静音超时事件。

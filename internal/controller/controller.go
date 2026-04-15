@@ -11,6 +11,8 @@ import (
 
 const (
 	EventSilenceTimeout = "silence_timeout"
+	EventSpeechStarted  = "speech_started"
+	EventSpeechStopped  = "speech_stopped"
 )
 
 const (
@@ -33,6 +35,7 @@ type Config struct {
 type Dependencies struct {
 	SessionID    string
 	CloseSession func(ctx context.Context, reason string) error
+	OnStageEvent func(ctx context.Context, event media.StageEvent)
 }
 
 // Controller 负责处理跨管线事件、下行参考信号和资源协调。
@@ -90,6 +93,10 @@ func (c *Controller) Emit(ctx context.Context, event media.StageEvent) {
 	switch event.Type {
 	case EventSilenceTimeout:
 		_ = c.CloseSession(ctx, "silence timeout")
+	case EventSpeechStarted, EventSpeechStopped:
+		if c.deps.OnStageEvent != nil {
+			c.deps.OnStageEvent(ctx, event)
+		}
 	}
 }
 
