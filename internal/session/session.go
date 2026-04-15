@@ -150,8 +150,8 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 		stages.NewBase64Encode(),
 	}
 
-	s.uplink = s.newPipeline("uplink", cfg.UplinkQueueSize, uplinkStages, media.OutputFunc(service.SendData))
-	s.downlink = s.newPipeline("downlink", cfg.DownlinkQueueSize, downlinkStages, media.OutputFunc(client.SendData))
+	s.uplink = s.newPipeline("uplink", cfg.UplinkQueueSize, uplinkStages, media.OutputFunc(service.SendAudio))
+	s.downlink = s.newPipeline("downlink", cfg.DownlinkQueueSize, downlinkStages, media.OutputFunc(client.SendAudio))
 
 	if err := s.uplink.Start(sessionCtx); err != nil {
 		cleanup("start uplink failed")
@@ -161,22 +161,22 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 		cleanup("start downlink failed")
 		return nil, err
 	}
-	if err := service.BindInput(media.InputFunc(func(ctx context.Context, frame media.Frame) error {
+	if err := service.BindAudioOutput(media.InputFunc(func(ctx context.Context, frame media.Frame) error {
 		return s.EnqueueDownlink(ctx, frame)
 	})); err != nil {
-		cleanup("bind service connector input failed")
+		cleanup("bind service connector audio output failed")
 		return nil, err
 	}
-	if err := service.BindMessageInput(media.MessageInputFunc(s.OnServiceMessage)); err != nil {
-		cleanup("bind service connector message input failed")
+	if err := service.BindMessageOutput(media.MessageOutputFunc(s.OnServiceMessage)); err != nil {
+		cleanup("bind service connector message output failed")
 		return nil, err
 	}
-	if err := client.BindInput(s.uplink); err != nil {
-		cleanup("bind client connector input failed")
+	if err := client.BindAudioOutput(s.uplink); err != nil {
+		cleanup("bind client connector audio output failed")
 		return nil, err
 	}
-	if err := client.BindMessageInput(media.MessageInputFunc(s.OnClientMessage)); err != nil {
-		cleanup("bind client connector message input failed")
+	if err := client.BindMessageOutput(media.MessageOutputFunc(s.OnClientMessage)); err != nil {
+		cleanup("bind client connector message output failed")
 		return nil, err
 	}
 

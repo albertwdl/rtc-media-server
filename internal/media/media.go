@@ -52,7 +52,7 @@ type Frame struct {
 }
 
 // Message 是 Connector 之间透传的非媒体业务消息。
-// 文本、控制 JSON 和错误事件不进入媒体 pipeline，而是由 Session 做桥接。
+// 消息、控制 JSON 和错误事件不进入媒体 pipeline，而是由 Session 做桥接。
 type Message struct {
 	SessionID string
 	Direction Direction
@@ -105,29 +105,34 @@ func (fn InputFunc) Push(ctx context.Context, frame Frame) error {
 	return fn(ctx, frame)
 }
 
+// AudioOutput 表示 Connector 收到外部音频后推送到的输出端。
+type AudioOutput interface {
+	Push(ctx context.Context, frame Frame) error
+}
+
 // Output 表示 pipeline 处理完成后的输出端。
 type Output interface {
-	SendData(ctx context.Context, frame Frame) error
+	SendAudio(ctx context.Context, frame Frame) error
 }
 
 // OutputFunc 允许用函数快速实现 Output。
 type OutputFunc func(ctx context.Context, frame Frame) error
 
-// SendData 调用函数型 Output 包装的发送函数。
-func (fn OutputFunc) SendData(ctx context.Context, frame Frame) error {
+// SendAudio 调用函数型 Output 包装的发送函数。
+func (fn OutputFunc) SendAudio(ctx context.Context, frame Frame) error {
 	return fn(ctx, frame)
 }
 
-// MessageInput 表示非媒体消息输入端。
-type MessageInput interface {
+// MessageOutput 表示 Connector 收到外部消息后推送到的输出端。
+type MessageOutput interface {
 	PushMessage(ctx context.Context, msg Message) error
 }
 
-// MessageInputFunc 允许用函数快速实现 MessageInput。
-type MessageInputFunc func(ctx context.Context, msg Message) error
+// MessageOutputFunc 允许用函数快速实现 MessageOutput。
+type MessageOutputFunc func(ctx context.Context, msg Message) error
 
-// PushMessage 调用函数型 MessageInput 包装的推送函数。
-func (fn MessageInputFunc) PushMessage(ctx context.Context, msg Message) error {
+// PushMessage 调用函数型 MessageOutput 包装的推送函数。
+func (fn MessageOutputFunc) PushMessage(ctx context.Context, msg Message) error {
 	return fn(ctx, msg)
 }
 

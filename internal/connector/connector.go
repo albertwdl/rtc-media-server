@@ -13,9 +13,13 @@ type ClientConnector interface {
 	ID() string
 	Protocol() string
 
-	BindInput(input media.Input) error
-	BindMessageInput(input media.MessageInput) error
-	SendData(ctx context.Context, frame media.Frame) error
+	// BindAudioOutput 绑定客户端连接收到外部音频后要推送到的输出端。
+	BindAudioOutput(output media.AudioOutput) error
+	// BindMessageOutput 绑定客户端连接收到外部消息后要推送到的输出端。
+	BindMessageOutput(output media.MessageOutput) error
+	// SendAudio 向客户端连接发送音频帧。
+	SendAudio(ctx context.Context, frame media.Frame) error
+	// SendMessage 向客户端连接发送消息。
 	SendMessage(ctx context.Context, msg media.Message) error
 
 	MeasureRTT(ctx context.Context) (time.Duration, error)
@@ -24,14 +28,18 @@ type ClientConnector interface {
 }
 
 // ServiceConnector 表示业务服务侧连接。
-// 上行通过 SendData 接收处理后的媒体帧；下行通过 BindInput 绑定的输入端投递返回媒体帧。
+// 上行通过 SendAudio 接收处理后的音频帧；下行通过绑定的输出端投递返回数据。
 type ServiceConnector interface {
 	ID() string
 	Protocol() string
 
-	BindInput(input media.Input) error
-	BindMessageInput(input media.MessageInput) error
-	SendData(ctx context.Context, frame media.Frame) error
+	// BindAudioOutput 绑定服务侧连接收到外部音频后要推送到的输出端。
+	BindAudioOutput(output media.AudioOutput) error
+	// BindMessageOutput 绑定服务侧连接收到外部消息后要推送到的输出端。
+	BindMessageOutput(output media.MessageOutput) error
+	// SendAudio 向服务侧连接发送音频帧。
+	SendAudio(ctx context.Context, frame media.Frame) error
+	// SendMessage 向服务侧连接发送消息。
 	SendMessage(ctx context.Context, msg media.Message) error
 	Close(ctx context.Context, reason string) error
 	Done() <-chan struct{}

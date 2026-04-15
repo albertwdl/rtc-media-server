@@ -18,8 +18,8 @@ func TestNewSessionCreatesFixedComponents(t *testing.T) {
 	}
 	defer sess.Close(context.Background(), "test done")
 
-	if client.input == nil {
-		t.Fatal("client BindInput did not bind uplink input")
+	if client.audioOutput == nil {
+		t.Fatal("client BindAudioOutput did not bind audio output")
 	}
 	if sess.ServiceConnector() == nil {
 		t.Fatal("service connector was not created")
@@ -83,10 +83,10 @@ func TestSessionMessageBridge(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	if client.msgInput == nil {
-		t.Fatal("client BindMessageInput did not bind message input")
+	if client.messageOutput == nil {
+		t.Fatal("client BindMessageOutput did not bind message output")
 	}
-	if err := client.msgInput.PushMessage(ctx, media.Message{
+	if err := client.messageOutput.PushMessage(ctx, media.Message{
 		Type:    "response.create",
 		Payload: []byte(`{"type":"response.create"}`),
 	}); err != nil {
@@ -199,14 +199,14 @@ func testConfig() Config {
 
 // testClientConnector 是 Session 单测使用的客户端 Connector。
 type testClientConnector struct {
-	id       string
-	done     chan struct{}
-	input    media.Input
-	msgInput media.MessageInput
-	consumed chan media.Frame
-	messages chan media.Message
-	closed   bool
-	mu       sync.Mutex
+	id            string
+	done          chan struct{}
+	audioOutput   media.AudioOutput
+	messageOutput media.MessageOutput
+	consumed      chan media.Frame
+	messages      chan media.Message
+	closed        bool
+	mu            sync.Mutex
 }
 
 // ID 返回测试客户端 ID。
@@ -215,20 +215,20 @@ func (c *testClientConnector) ID() string { return c.id }
 // Protocol 返回测试客户端协议名称。
 func (c *testClientConnector) Protocol() string { return "test_client" }
 
-// BindInput 绑定测试客户端收到数据后要推送到的 pipeline 输入端。
-func (c *testClientConnector) BindInput(input media.Input) error {
-	c.input = input
+// BindAudioOutput 绑定测试客户端收到音频后要推送到的输出端。
+func (c *testClientConnector) BindAudioOutput(output media.AudioOutput) error {
+	c.audioOutput = output
 	return nil
 }
 
-// BindMessageInput 绑定测试客户端收到非媒体消息后要推送到的输入端。
-func (c *testClientConnector) BindMessageInput(input media.MessageInput) error {
-	c.msgInput = input
+// BindMessageOutput 绑定测试客户端收到消息后要推送到的输出端。
+func (c *testClientConnector) BindMessageOutput(output media.MessageOutput) error {
+	c.messageOutput = output
 	return nil
 }
 
-// SendData 记录测试下行媒体帧。
-func (c *testClientConnector) SendData(ctx context.Context, frame media.Frame) error {
+// SendAudio 记录测试下行音频帧。
+func (c *testClientConnector) SendAudio(ctx context.Context, frame media.Frame) error {
 	if c.consumed != nil {
 		select {
 		case c.consumed <- frame:
@@ -239,7 +239,7 @@ func (c *testClientConnector) SendData(ctx context.Context, frame media.Frame) e
 	return nil
 }
 
-// SendMessage 记录测试下行非媒体消息。
+// SendMessage 记录测试下行消息。
 func (c *testClientConnector) SendMessage(ctx context.Context, msg media.Message) error {
 	if c.messages != nil {
 		select {

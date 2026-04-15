@@ -69,8 +69,8 @@ type clientConnector struct {
 	mu            sync.RWMutex
 	stream        *channelConn
 	streamPending bool
-	dataInput     media.Input
-	msgInput      media.MessageInput
+	audioOutput   media.AudioOutput
+	messageOutput media.MessageOutput
 	done          chan struct{}
 	closeOnce     sync.Once
 
@@ -406,7 +406,7 @@ func (s *Server) unregisterClient(clientID string, err error) {
 	}
 	if disconnected {
 		client.cancelMockResponse()
-		client.clearDataInput()
+		client.clearOutputs()
 		client.closeDone()
 		if s.callbacks.OnDisconnect != nil {
 			s.callbacks.OnDisconnect(context.Background(), clientID, err)
@@ -457,24 +457,24 @@ func (client *clientConnector) Protocol() string { return "websocket" }
 // ID 返回客户端硬件 ID。
 func (client *clientConnector) ID() string { return client.id }
 
-// BindInput 绑定客户端收到上行数据后要推送到的 pipeline 输入端。
-func (client *clientConnector) BindInput(input media.Input) error {
+// BindAudioOutput 绑定客户端收到上行音频后要推送到的输出端。
+func (client *clientConnector) BindAudioOutput(output media.AudioOutput) error {
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	client.dataInput = input
+	client.audioOutput = output
 	return nil
 }
 
-// BindMessageInput 绑定客户端收到非媒体消息后要推送到的输入端。
-func (client *clientConnector) BindMessageInput(input media.MessageInput) error {
+// BindMessageOutput 绑定客户端收到消息后要推送到的输出端。
+func (client *clientConnector) BindMessageOutput(output media.MessageOutput) error {
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	client.msgInput = input
+	client.messageOutput = output
 	return nil
 }
 
-// SendData 把 pipeline 输出的 base64 音频帧打包成 JSON 后写回 stream 连接。
-func (client *clientConnector) SendData(ctx context.Context, frame media.Frame) error {
+// SendAudio 把 pipeline 输出的 base64 音频帧打包成 JSON 后写回 stream 连接。
+func (client *clientConnector) SendAudio(ctx context.Context, frame media.Frame) error {
 	if frame.Format.Codec != media.CodecBase64 {
 		return fmt.Errorf("client_id=%s websocket connector requires base64 frame, got %s", client.id, frame.Format.Codec)
 	}
@@ -489,7 +489,7 @@ func (client *clientConnector) SendData(ctx context.Context, frame media.Frame) 
 	return nil
 }
 
-// SendMessage 把非媒体消息作为 JSON/text 直接写回 stream 连接。
+// SendMessage 把消息作为 JSON/text 直接写回 stream 连接。
 func (client *clientConnector) SendMessage(ctx context.Context, msg media.Message) error {
 	return client.sendStreamPayload(ctx, msg.Payload)
 }
@@ -709,21 +709,21 @@ func (client *clientConnector) channels() []*channelConn {
 	return channels
 }
 
-// boundDataInput 返回当前客户端绑定的 pipeline 输入端。
-func (client *clientConnector) boundDataInput() media.Input {
+// boundAudioOutput 返回当前客户端绑定的音频输出端。
+func (client *clientConnector) boundAudioOutput() media.AudioOutput {
 	client.mu.RLock()
 	defer client.mu.RUnlock()
-	return client.dataInput
+	return client.audioOutput
 }
 
-// pushUplinkFrame 把上行媒体帧转交给绑定的 pipeline 输入端。
+// pushUplinkFrame 把上行媒体帧转交给绑定的音频输出端。
 func (client *clientConnector) pushUplinkFrame(ctx context.Context, frame media.Frame) {
-	input := client.boundDataInput()
-	if input == nil {
-		client.server.reportError(ctx, client.id, errors.New("websocket data input not bound"))
+	output := client.boundAudioOutput()
+	if output == nil {
+		client.server.reportError(ctx, client.id, errors.New("websocket audio output not bound"))
 		return
 	}
-	if err := input.Push(ctx, frame); err != nil {
+	if err := output.Push(ctx, frame); err != nil {
 		client.server.reportError(ctx, client.id, err)
 	}
 }
@@ -785,25 +785,25 @@ func packTranscriptionDone(transcript string) ([]byte, error) {
 	})
 }
 
-// clearDataInput 清理客户端绑定的 pipeline 输入端。
-func (client *clientConnector) clearDataInput() {
+// clearOutputs 清理客户端绑定的数据输出端。
+func (client *clientConnector) clearOutputs() {
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	client.dataInput = nil
-	client.msgInput = nil
+	client.audioOutput = nil
+	client.messageOutput = nil
 }
 
-// boundMessageInput 返回当前客户端绑定的非媒体消息输入端。
-func (client *clientConnector) boundMessageInput() media.MessageInput {
+// boundMessageOutput 返回当前客户端绑定的消息输出端。
+func (client *clientConnector) boundMessageOutput() media.MessageOutput {
 	client.mu.RLock()
 	defer client.mu.RUnlock()
-	return client.msgInput
+	return client.messageOutput
 }
 
-// pushMessage 把 stream 控制事件转交给绑定的非媒体消息输入端。
+// pushMessage 把 stream 控制事件转交给绑定的消息输出端。
 func (client *clientConnector) pushMessage(ctx context.Context, event streamEvent) {
-	input := client.boundMessageInput()
-	if input == nil {
+	output := client.boundMessageOutput()
+	if output == nil {
 		return
 	}
 	msg := media.Message{
@@ -816,7 +816,7 @@ func (client *clientConnector) pushMessage(ctx context.Context, event streamEven
 			"source":   "websocket_stream",
 		},
 	}
-	if err := input.PushMessage(ctx, msg); err != nil {
+	if err := output.PushMessage(ctx, msg); err != nil {
 		client.server.reportError(ctx, client.id, err)
 	}
 }

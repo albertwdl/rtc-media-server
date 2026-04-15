@@ -350,7 +350,7 @@ func (n *outputNode) send(ctx context.Context, frame media.Frame) {
 		n.processed.Add(1)
 		return
 	}
-	if err := n.output.SendData(ctx, frame); err != nil {
+	if err := n.output.SendAudio(ctx, frame); err != nil {
 		n.errors.Add(1)
 		log.Errorf(
 			"client_id=%s pipeline output failed pipeline=%s direction=%s codec=%s error=%v",
