@@ -69,12 +69,12 @@ func TestSessionDownlinkPipelineConsumesToClient(t *testing.T) {
 	}
 }
 
-// TestSessionMessageBridge 验证非媒体消息只通过 Session 桥接，不进入媒体 pipeline。
-func TestSessionMessageBridge(t *testing.T) {
+// TestSessionServiceMessageBridge 验证服务侧消息会通过 Session 桥接到端侧。
+func TestSessionServiceMessageBridge(t *testing.T) {
 	client := &testClientConnector{
 		id:       "client-msg",
 		done:     make(chan struct{}),
-		messages: make(chan media.Message, 1),
+		messages: make(chan media.Message, 2),
 	}
 	sess, err := NewSession(context.Background(), testConfig(), client)
 	if err != nil {
@@ -88,13 +88,7 @@ func TestSessionMessageBridge(t *testing.T) {
 	if client.messageOutput == nil {
 		t.Fatal("client BindMessageOutput did not bind message output")
 	}
-	if err := client.messageOutput.PushMessage(ctx, media.Message{
-		Type:    "response.create",
-		Payload: []byte(`{"type":"response.create"}`),
-	}); err != nil {
-		t.Fatalf("push client message: %v", err)
-	}
-	waitForServiceMessageCount(t, ctx, sess, 1)
+	expectClientMessageType(t, ctx, client.messages, sessionCreatedEvent)
 
 	service, ok := sess.ServiceConnector().(interface {
 		PushMessage(context.Context, media.Message) error
@@ -109,16 +103,79 @@ func TestSessionMessageBridge(t *testing.T) {
 		t.Fatalf("push service message: %v", err)
 	}
 
+	expectClientMessageType(t, ctx, client.messages, "response.text.delta")
+}
+
+// TestSessionClientCommands 验证端侧控制指令由 Session 统一响应。
+func TestSessionClientCommands(t *testing.T) {
+	client := &testClientConnector{
+		id:       "client-command",
+		done:     make(chan struct{}),
+		consumed: make(chan media.Frame, 1),
+		messages: make(chan media.Message, 8),
+	}
+	sess, err := NewSession(context.Background(), testConfig(), client)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer sess.Close(context.Background(), "test done")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	expectClientMessageType(t, ctx, client.messages, sessionCreatedEvent)
+
+	if err := sess.OnClientMessage(ctx, media.Message{Type: sessionUpdateEvent}); err != nil {
+		t.Fatalf("session update: %v", err)
+	}
+	expectClientMessageType(t, ctx, client.messages, sessionUpdatedEvent)
+
+	if err := sess.OnClientMessage(ctx, media.Message{Type: inputAudioCommitEvent}); err != nil {
+		t.Fatalf("audio commit: %v", err)
+	}
+	expectClientMessageType(t, ctx, client.messages, inputAudioCommittedEvent)
+
+	if err := sess.OnClientMessage(ctx, media.Message{Type: "unknown.event"}); err != nil {
+		t.Fatalf("unknown event: %v", err)
+	}
+	expectClientMessageType(t, ctx, client.messages, errorEvent)
+}
+
+// TestSessionResponseCreateRunsMockResponse 验证 response.create 会由 Session 触发完整模拟回复。
+func TestSessionResponseCreateRunsMockResponse(t *testing.T) {
+	client := &testClientConnector{
+		id:       "client-response",
+		done:     make(chan struct{}),
+		consumed: make(chan media.Frame, 1),
+		messages: make(chan media.Message, 8),
+	}
+	sess, err := NewSession(context.Background(), testConfig(), client)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer sess.Close(context.Background(), "test done")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	expectClientMessageType(t, ctx, client.messages, sessionCreatedEvent)
+
+	if err := sess.OnClientMessage(ctx, media.Message{Type: responseCreateEvent}); err != nil {
+		t.Fatalf("response create: %v", err)
+	}
+	for _, want := range []string{
+		responseCreatedEvent,
+		responseAudioTranscriptDeltaEvent,
+		transcriptionDoneEvent,
+		responseDoneEvent,
+	} {
+		expectClientMessageType(t, ctx, client.messages, want)
+	}
 	select {
-	case msg := <-client.messages:
-		if msg.Type != "response.text.delta" {
-			t.Fatalf("message type = %q", msg.Type)
-		}
-		if msg.Direction != media.DirectionDownlink {
-			t.Fatalf("message direction = %q", msg.Direction)
+	case frame := <-client.consumed:
+		if frame.Format.Codec != media.CodecBase64 {
+			t.Fatalf("audio codec = %q", frame.Format.Codec)
 		}
 	case <-ctx.Done():
-		t.Fatal("timed out waiting for client message")
+		t.Fatal("timed out waiting for response audio")
 	}
 }
 
@@ -127,7 +184,7 @@ func TestSessionStageSpeechEventsForwardToClient(t *testing.T) {
 	client := &testClientConnector{
 		id:       "client-speech",
 		done:     make(chan struct{}),
-		messages: make(chan media.Message, 2),
+		messages: make(chan media.Message, 3),
 	}
 	sess, err := NewSession(context.Background(), testConfig(), client)
 	if err != nil {
@@ -137,6 +194,7 @@ func TestSessionStageSpeechEventsForwardToClient(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	expectClientMessageType(t, ctx, client.messages, sessionCreatedEvent)
 	sess.Controller().Emit(ctx, media.StageEvent{
 		SessionID: client.ID(),
 		Type:      controller.EventSpeechStarted,
@@ -340,5 +398,30 @@ func waitForServiceMessageCount(t *testing.T, ctx context.Context, sess *Session
 		case <-ctx.Done():
 			t.Fatalf("timed out waiting for service message count %d, got %d", want, counter.MessageCount())
 		}
+	}
+}
+
+// expectClientMessageType 等待测试客户端收到指定消息类型。
+func expectClientMessageType(t *testing.T, ctx context.Context, messages <-chan media.Message, want string) {
+	t.Helper()
+	select {
+	case msg := <-messages:
+		if msg.Type != want {
+			t.Fatalf("message type = %q, want %q", msg.Type, want)
+		}
+		if msg.Direction != media.DirectionDownlink {
+			t.Fatalf("message direction = %q", msg.Direction)
+		}
+		var payload struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+			t.Fatalf("unmarshal message payload: %v", err)
+		}
+		if payload.Type != want {
+			t.Fatalf("payload type = %q, want %q", payload.Type, want)
+		}
+	case <-ctx.Done():
+		t.Fatalf("timed out waiting for %s", want)
 	}
 }

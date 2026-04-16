@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -24,8 +25,27 @@ const (
 )
 
 const (
-	inputAudioSpeechStartedEvent = "input_audio_buffer.speech_started"
-	inputAudioSpeechStoppedEvent = "input_audio_buffer.speech_stopped"
+	inputAudioSpeechStartedEvent      = "input_audio_buffer.speech_started"
+	inputAudioSpeechStoppedEvent      = "input_audio_buffer.speech_stopped"
+	sessionCreatedEvent               = "session.created"
+	sessionUpdateEvent                = "session.update"
+	sessionUpdatedEvent               = "session.updated"
+	inputAudioCommitEvent             = "input_audio_buffer.commit"
+	inputAudioCommittedEvent          = "input_audio_buffer.committed"
+	responseCreateEvent               = "response.create"
+	responseCancelEvent               = "response.cancel"
+	responseCreatedEvent              = "response.created"
+	responseAudioTranscriptDeltaEvent = "response.audio_transcript.delta"
+	transcriptionDoneEvent            = "conversation.item.input_audio_transcription.completed"
+	responseDoneEvent                 = "response.done"
+	errorEvent                        = "error"
+)
+
+const (
+	mockResponseAudioDuration = 20 * time.Millisecond
+	mockResponseSendGap       = 50 * time.Millisecond
+	pcm16BytesPerSample       = 2
+	mockTranscriptDelta       = "ok"
 )
 
 // Config 定义 Session 管理和固定链路运行所需的参数。
@@ -61,10 +81,12 @@ type Session struct {
 	uplink   media.Pipeline
 	downlink media.Pipeline
 
-	mu  sync.RWMutex
-	err error
-	rtt time.Duration
-	ok  bool
+	mu             sync.RWMutex
+	err            error
+	rtt            time.Duration
+	ok             bool
+	responseCancel context.CancelFunc
+	responseID     uint64
 }
 
 // NewManager 创建业务 Session 管理器。
@@ -184,6 +206,11 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 	}
 	if err := client.BindMessageOutput(media.MessageOutputFunc(s.OnClientMessage)); err != nil {
 		cleanup("bind client connector message output failed")
+		return nil, err
+	}
+
+	if err := s.sendSimpleEvent(sessionCtx, sessionCreatedEvent); err != nil {
+		cleanup("send session created failed")
 		return nil, err
 	}
 
@@ -323,6 +350,7 @@ func (s *Session) Close(ctx context.Context, reason string) error {
 	var closeErr error
 	s.once.Do(func() {
 		s.cancel()
+		s.cancelMockResponse()
 		if s.controller != nil {
 			_ = s.controller.Close(ctx)
 		}
@@ -355,22 +383,11 @@ func (s *Session) OnStageEvent(ctx context.Context, event media.StageEvent) {
 	if !ok {
 		return
 	}
-	payload, err := packSimpleMessageEvent(eventType)
-	if err != nil {
-		s.OnError(ctx, fmt.Errorf("pack stage event: %w", err))
-		return
-	}
-	if err := s.OnServiceMessage(ctx, media.Message{
-		SessionID: s.id,
-		Direction: media.DirectionDownlink,
-		Type:      eventType,
-		Payload:   payload,
-		Metadata: map[string]string{
-			"stage":      event.Stage,
-			"stage_type": event.Type,
-		},
-	}); err != nil {
+	if err := s.sendSimpleEvent(ctx, eventType); err != nil {
 		s.OnError(ctx, fmt.Errorf("send stage event: %w", err))
+	}
+	if event.Type == controller.EventSpeechStopped {
+		s.startMockResponse(ctx, true)
 	}
 }
 
@@ -378,6 +395,9 @@ func (s *Session) OnStageEvent(ctx context.Context, event media.StageEvent) {
 func (s *Session) OnClientMessage(ctx context.Context, msg media.Message) error {
 	msg.SessionID = s.id
 	msg.Direction = media.DirectionUplink
+	if s.handleClientCommand(ctx, msg) {
+		return nil
+	}
 	if s.serviceConnector == nil {
 		return nil
 	}
@@ -404,6 +424,217 @@ func (s *Session) setErr(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.err = err
+}
+
+// handleClientCommand 在 Session 内统一处理端侧控制指令。
+func (s *Session) handleClientCommand(ctx context.Context, msg media.Message) bool {
+	switch msg.Type {
+	case "invalid_json":
+		message := "invalid json"
+		if msg.Metadata != nil && msg.Metadata["error"] != "" {
+			message = message + ": " + msg.Metadata["error"]
+		}
+		if err := s.sendErrorEvent(ctx, message); err != nil {
+			s.OnError(ctx, fmt.Errorf("send error event: %w", err))
+		}
+		return true
+	case sessionUpdateEvent:
+		if err := s.sendSimpleEvent(ctx, sessionUpdatedEvent); err != nil {
+			s.OnError(ctx, fmt.Errorf("send session updated: %w", err))
+		}
+		return true
+	case inputAudioCommitEvent:
+		if err := s.sendSimpleEvent(ctx, inputAudioCommittedEvent); err != nil {
+			s.OnError(ctx, fmt.Errorf("send input audio committed: %w", err))
+		}
+		return true
+	case responseCreateEvent:
+		s.startMockResponse(ctx, false)
+		return true
+	case responseCancelEvent:
+		s.cancelMockResponse()
+		if err := s.sendSimpleEvent(ctx, responseDoneEvent); err != nil {
+			s.OnError(ctx, fmt.Errorf("send response done: %w", err))
+		}
+		return true
+	default:
+		if err := s.sendErrorEvent(ctx, "unsupported event type: "+msg.Type); err != nil {
+			s.OnError(ctx, fmt.Errorf("send error event: %w", err))
+		}
+		return true
+	}
+}
+
+// startMockResponse 启动一轮 Session 级模拟回复流程。
+func (s *Session) startMockResponse(ctx context.Context, autoCommit bool) {
+	s.mu.Lock()
+	if s.responseCancel != nil {
+		s.responseCancel()
+	}
+	s.responseID++
+	responseID := s.responseID
+	responseCtx, cancel := context.WithCancel(context.Background())
+	s.responseCancel = cancel
+	s.mu.Unlock()
+
+	go func() {
+		defer s.clearMockResponse(responseID)
+		if err := s.runMockResponse(responseCtx, autoCommit); err != nil && !errors.Is(err, context.Canceled) {
+			s.OnError(ctx, fmt.Errorf("run mock response: %w", err))
+		}
+	}()
+}
+
+// runMockResponse 按联调文档发送一轮最小模拟回复。
+func (s *Session) runMockResponse(ctx context.Context, autoCommit bool) error {
+	if autoCommit {
+		if err := s.sendSimpleEvent(ctx, inputAudioCommittedEvent); err != nil {
+			return err
+		}
+		if err := waitMockResponseGap(ctx); err != nil {
+			return err
+		}
+	}
+	if err := s.sendSimpleEvent(ctx, responseCreatedEvent); err != nil {
+		return err
+	}
+	if err := waitMockResponseGap(ctx); err != nil {
+		return err
+	}
+	if err := s.sendDeltaEvent(ctx, responseAudioTranscriptDeltaEvent, mockTranscriptDelta); err != nil {
+		return err
+	}
+	if err := waitMockResponseGap(ctx); err != nil {
+		return err
+	}
+	if err := s.EnqueueDownlink(ctx, media.Frame{
+		Payload: makeSilentPCM(mockResponseAudioDuration),
+		Format:  media.DefaultPCM16Format(),
+		Metadata: map[string]string{
+			"event_type": responseCreatedEvent,
+			"source":     "session_mock_response",
+		},
+	}); err != nil {
+		return err
+	}
+	if err := waitMockResponseGap(ctx); err != nil {
+		return err
+	}
+	if err := s.sendTranscriptionDone(ctx, ""); err != nil {
+		return err
+	}
+	if err := waitMockResponseGap(ctx); err != nil {
+		return err
+	}
+	return s.sendSimpleEvent(ctx, responseDoneEvent)
+}
+
+// cancelMockResponse 停止当前正在运行的模拟回复。
+func (s *Session) cancelMockResponse() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.responseCancel != nil {
+		s.responseCancel()
+		s.responseCancel = nil
+	}
+}
+
+// clearMockResponse 清理指定模拟回复的取消函数。
+func (s *Session) clearMockResponse(responseID uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.responseID == responseID {
+		s.responseCancel = nil
+	}
+}
+
+// sendSimpleEvent 向端侧发送只包含 type 字段的事件。
+func (s *Session) sendSimpleEvent(ctx context.Context, eventType string) error {
+	payload, err := packSimpleMessageEvent(eventType)
+	if err != nil {
+		return err
+	}
+	return s.OnServiceMessage(ctx, media.Message{
+		SessionID: s.id,
+		Direction: media.DirectionDownlink,
+		Type:      eventType,
+		Payload:   payload,
+	})
+}
+
+// sendDeltaEvent 向端侧发送带 delta 字段的事件。
+func (s *Session) sendDeltaEvent(ctx context.Context, eventType string, delta string) error {
+	payload, err := json.Marshal(struct {
+		Type  string `json:"type"`
+		Delta string `json:"delta"`
+	}{Type: eventType, Delta: delta})
+	if err != nil {
+		return err
+	}
+	return s.OnServiceMessage(ctx, media.Message{
+		SessionID: s.id,
+		Direction: media.DirectionDownlink,
+		Type:      eventType,
+		Payload:   payload,
+	})
+}
+
+// sendTranscriptionDone 向端侧发送模拟输入转写完成事件。
+func (s *Session) sendTranscriptionDone(ctx context.Context, transcript string) error {
+	payload, err := json.Marshal(struct {
+		Type       string `json:"type"`
+		Transcript string `json:"transcript"`
+	}{Type: transcriptionDoneEvent, Transcript: transcript})
+	if err != nil {
+		return err
+	}
+	return s.OnServiceMessage(ctx, media.Message{
+		SessionID: s.id,
+		Direction: media.DirectionDownlink,
+		Type:      transcriptionDoneEvent,
+		Payload:   payload,
+	})
+}
+
+// sendErrorEvent 向端侧发送最小错误事件。
+func (s *Session) sendErrorEvent(ctx context.Context, message string) error {
+	payload, err := json.Marshal(struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	}{Type: errorEvent, Message: message})
+	if err != nil {
+		return err
+	}
+	return s.OnServiceMessage(ctx, media.Message{
+		SessionID: s.id,
+		Direction: media.DirectionDownlink,
+		Type:      errorEvent,
+		Payload:   payload,
+	})
+}
+
+// waitMockResponseGap 在模拟事件之间留出短间隔。
+func waitMockResponseGap(ctx context.Context) error {
+	timer := time.NewTimer(mockResponseSendGap)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// makeSilentPCM 生成用于联调的 PCM16LE 静音帧。
+func makeSilentPCM(duration time.Duration) []byte {
+	if duration <= 0 {
+		duration = mockResponseAudioDuration
+	}
+	samples := int(duration.Seconds() * float64(media.DefaultAudioSampleRate) * float64(media.DefaultAudioChannels))
+	if samples <= 0 {
+		samples = 1
+	}
+	return make([]byte, samples*pcm16BytesPerSample)
 }
 
 // stageEventToClientMessageType 将内部 stage 事件映射为端侧 stream 事件类型。
