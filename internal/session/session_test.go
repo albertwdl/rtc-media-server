@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -82,14 +81,12 @@ func TestSessionServiceMessageBridge(t *testing.T) {
 	}
 	defer sess.Close(context.Background(), "test done")
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
 	if client.messageOutput == nil {
 		t.Fatal("client BindMessageOutput did not bind message output")
 	}
-	expectClientMessageType(t, ctx, client.messages, sessionCreatedEvent)
 
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 	service, ok := sess.ServiceConnector().(interface {
 		PushMessage(context.Context, media.Message) error
 	})
@@ -106,47 +103,11 @@ func TestSessionServiceMessageBridge(t *testing.T) {
 	expectClientMessageType(t, ctx, client.messages, "response.text.delta")
 }
 
-// TestSessionClientCommands 验证端侧控制指令由 Session 统一响应。
-func TestSessionClientCommands(t *testing.T) {
+// TestSessionClientMessageBridge 验证端侧消息会通过 Session 桥接到服务侧。
+func TestSessionClientMessageBridge(t *testing.T) {
 	client := &testClientConnector{
-		id:       "client-command",
-		done:     make(chan struct{}),
-		consumed: make(chan media.Frame, 1),
-		messages: make(chan media.Message, 8),
-	}
-	sess, err := NewSession(context.Background(), testConfig(), client)
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
-	defer sess.Close(context.Background(), "test done")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	expectClientMessageType(t, ctx, client.messages, sessionCreatedEvent)
-
-	if err := sess.OnClientMessage(ctx, media.Message{Type: sessionUpdateEvent}); err != nil {
-		t.Fatalf("session update: %v", err)
-	}
-	expectClientMessageType(t, ctx, client.messages, sessionUpdatedEvent)
-
-	if err := sess.OnClientMessage(ctx, media.Message{Type: inputAudioCommitEvent}); err != nil {
-		t.Fatalf("audio commit: %v", err)
-	}
-	expectClientMessageType(t, ctx, client.messages, inputAudioCommittedEvent)
-
-	if err := sess.OnClientMessage(ctx, media.Message{Type: "unknown.event"}); err != nil {
-		t.Fatalf("unknown event: %v", err)
-	}
-	expectClientMessageType(t, ctx, client.messages, errorEvent)
-}
-
-// TestSessionResponseCreateRunsMockResponse 验证 response.create 会由 Session 触发完整模拟回复。
-func TestSessionResponseCreateRunsMockResponse(t *testing.T) {
-	client := &testClientConnector{
-		id:       "client-response",
-		done:     make(chan struct{}),
-		consumed: make(chan media.Frame, 1),
-		messages: make(chan media.Message, 8),
+		id:   "client-command",
+		done: make(chan struct{}),
 	}
 	sess, err := NewSession(context.Background(), testConfig(), client)
 	if err != nil {
@@ -156,35 +117,19 @@ func TestSessionResponseCreateRunsMockResponse(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	expectClientMessageType(t, ctx, client.messages, sessionCreatedEvent)
 
-	if err := sess.OnClientMessage(ctx, media.Message{Type: responseCreateEvent}); err != nil {
-		t.Fatalf("response create: %v", err)
+	if err := sess.OnClientMessage(ctx, media.Message{Type: "connector.command"}); err != nil {
+		t.Fatalf("client message: %v", err)
 	}
-	for _, want := range []string{
-		responseCreatedEvent,
-		responseAudioTranscriptDeltaEvent,
-		transcriptionDoneEvent,
-		responseDoneEvent,
-	} {
-		expectClientMessageType(t, ctx, client.messages, want)
-	}
-	select {
-	case frame := <-client.consumed:
-		if frame.Format.Codec != media.CodecBase64 {
-			t.Fatalf("audio codec = %q", frame.Format.Codec)
-		}
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for response audio")
-	}
+	waitForServiceMessageCount(t, ctx, sess, 1)
 }
 
-// TestSessionStageSpeechEventsForwardToClient 验证 VAD 语音起止事件会转成端侧下行消息。
+// TestSessionStageSpeechEventsForwardToClient 验证 VAD 语音起止事件会转成中性下行消息。
 func TestSessionStageSpeechEventsForwardToClient(t *testing.T) {
 	client := &testClientConnector{
 		id:       "client-speech",
 		done:     make(chan struct{}),
-		messages: make(chan media.Message, 3),
+		messages: make(chan media.Message, 2),
 	}
 	sess, err := NewSession(context.Background(), testConfig(), client)
 	if err != nil {
@@ -194,7 +139,6 @@ func TestSessionStageSpeechEventsForwardToClient(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	expectClientMessageType(t, ctx, client.messages, sessionCreatedEvent)
 	sess.Controller().Emit(ctx, media.StageEvent{
 		SessionID: client.ID(),
 		Type:      controller.EventSpeechStarted,
@@ -208,25 +152,9 @@ func TestSessionStageSpeechEventsForwardToClient(t *testing.T) {
 		Stage:     "vad_mock",
 	})
 
-	want := []string{inputAudioSpeechStartedEvent, inputAudioSpeechStoppedEvent}
+	want := []string{media.MessageSpeechStarted, media.MessageSpeechStopped}
 	for _, eventType := range want {
-		select {
-		case msg := <-client.messages:
-			if msg.Type != eventType {
-				t.Fatalf("message type = %q, want %q", msg.Type, eventType)
-			}
-			var payload struct {
-				Type string `json:"type"`
-			}
-			if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-				t.Fatalf("unmarshal message payload: %v", err)
-			}
-			if payload.Type != eventType {
-				t.Fatalf("payload type = %q, want %q", payload.Type, eventType)
-			}
-		case <-ctx.Done():
-			t.Fatalf("timed out waiting for %s", eventType)
-		}
+		expectClientMessageType(t, ctx, client.messages, eventType)
 	}
 }
 
@@ -411,15 +339,6 @@ func expectClientMessageType(t *testing.T, ctx context.Context, messages <-chan 
 		}
 		if msg.Direction != media.DirectionDownlink {
 			t.Fatalf("message direction = %q", msg.Direction)
-		}
-		var payload struct {
-			Type string `json:"type"`
-		}
-		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-			t.Fatalf("unmarshal message payload: %v", err)
-		}
-		if payload.Type != want {
-			t.Fatalf("payload type = %q, want %q", payload.Type, want)
 		}
 	case <-ctx.Done():
 		t.Fatalf("timed out waiting for %s", want)

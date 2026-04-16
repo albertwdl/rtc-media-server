@@ -15,6 +15,13 @@ const (
 )
 
 const (
+	// MessageSpeechStarted 表示内部检测到上行语音开始。
+	MessageSpeechStarted = "speech_started"
+	// MessageSpeechStopped 表示内部检测到上行语音结束。
+	MessageSpeechStopped = "speech_stopped"
+)
+
+const (
 	// DefaultAudioSampleRate 是端侧默认 PCM16 采样率。
 	DefaultAudioSampleRate = 8000
 	// DefaultAudioChannels 是端侧默认声道数。

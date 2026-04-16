@@ -612,6 +612,13 @@ func newTestTLSServer(t *testing.T, onSession func(*session.Session), callbackOp
 				sess.OnEvent(ctx, event)
 			}
 		},
+		OnResponseAudio: func(ctx context.Context, clientID string, frame media.Frame) error {
+			sess, ok := manager.Get(clientID)
+			if !ok {
+				return nil
+			}
+			return sess.EnqueueDownlink(ctx, frame)
+		},
 	}
 	for _, opt := range callbackOpts {
 		opt(&callbacks)

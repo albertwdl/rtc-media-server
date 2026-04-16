@@ -19,8 +19,29 @@ import (
 )
 
 const (
-	inputAudioAppendEvent  = "input_audio_buffer.append"
-	responseAudioDeltaType = "response.audio.delta"
+	inputAudioAppendEvent             = "input_audio_buffer.append"
+	inputAudioCommitEvent             = "input_audio_buffer.commit"
+	responseCreateEvent               = "response.create"
+	responseCancelEvent               = "response.cancel"
+	sessionUpdateEvent                = "session.update"
+	sessionCreatedEvent               = "session.created"
+	sessionUpdatedEvent               = "session.updated"
+	speechStartedEvent                = "input_audio_buffer.speech_started"
+	speechStoppedEvent                = "input_audio_buffer.speech_stopped"
+	inputAudioCommittedEvent          = "input_audio_buffer.committed"
+	responseCreatedEvent              = "response.created"
+	responseAudioTranscriptDeltaEvent = "response.audio_transcript.delta"
+	responseAudioDeltaType            = "response.audio.delta"
+	transcriptionDoneEvent            = "conversation.item.input_audio_transcription.completed"
+	responseDoneEvent                 = "response.done"
+	errorEvent                        = "error"
+)
+
+const (
+	mockResponseAudioDuration = 20 * time.Millisecond
+	mockResponseSendGap       = 50 * time.Millisecond
+	pcm16BytesPerSample       = 2
+	mockTranscriptDelta       = "ok"
 )
 
 // Server 是全局 WebSocket 监听器，负责 WSS 接入并创建每个客户端的 Connector。
@@ -36,10 +57,11 @@ type Server struct {
 
 // Callbacks 定义 WebSocket 连接生命周期事件的外部处理函数。
 type Callbacks struct {
-	OnConnect    func(ctx context.Context, client connector.ClientConnector) error
-	OnDisconnect func(ctx context.Context, clientID string, err error)
-	OnEvent      func(ctx context.Context, clientID string, event media.Event)
-	OnError      func(ctx context.Context, clientID string, err error)
+	OnConnect       func(ctx context.Context, client connector.ClientConnector) error
+	OnDisconnect    func(ctx context.Context, clientID string, err error)
+	OnEvent         func(ctx context.Context, clientID string, event media.Event)
+	OnResponseAudio func(ctx context.Context, clientID string, frame media.Frame) error
+	OnError         func(ctx context.Context, clientID string, err error)
 }
 
 // clientConnector 表示某个客户端在 WebSocket 协议下的一组 channel 连接。
@@ -54,6 +76,10 @@ type clientConnector struct {
 	messageOutput media.MessageOutput
 	done          chan struct{}
 	closeOnce     sync.Once
+
+	responseMu     sync.Mutex
+	responseCancel context.CancelFunc
+	responseID     uint64
 }
 
 // channelConn 封装单个 WebSocket channel 及其写锁。
@@ -196,6 +222,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		s.unregisterClient(clientID, err)
 		return
 	}
+	if err := client.sendStreamEvent(r.Context(), sessionCreatedEvent); err != nil {
+		s.reportError(r.Context(), clientID, fmt.Errorf("send session created: %w", err))
+	}
 
 	log.Infof("client_id=%s websocket channel connected protocol=%s channel=stream", clientID, client.Protocol())
 
@@ -232,14 +261,26 @@ func (s *Server) handleStreamPayload(ctx context.Context, client *clientConnecto
 	if err != nil {
 		s.reportError(ctx, client.id, fmt.Errorf("parse stream event: %w", err))
 		client.pushInvalidMessage(ctx, payload, err)
+		if sendErr := client.sendErrorEvent(ctx, "invalid json: "+err.Error()); sendErr != nil {
+			s.reportError(ctx, client.id, fmt.Errorf("send error event: %w", sendErr))
+		}
 		return
 	}
 
-	if event.Type == inputAudioAppendEvent {
+	switch event.Type {
+	case inputAudioAppendEvent:
 		s.handleInputAudioAppend(ctx, client, event)
-		return
+	case inputAudioCommitEvent:
+		s.handleInputAudioCommit(ctx, client, event)
+	case responseCreateEvent:
+		s.handleResponseCreate(ctx, client, event)
+	case responseCancelEvent:
+		s.handleResponseCancel(ctx, client, event)
+	case sessionUpdateEvent:
+		s.handleSessionUpdate(ctx, client, event)
+	default:
+		s.handleUnknownStreamEvent(ctx, client, event)
 	}
-	s.handleStreamMessage(ctx, client, event)
 }
 
 // parseStreamEvent 将 WebSocket payload 解析为 stream JSON 事件。
@@ -281,11 +322,53 @@ func (s *Server) handleInputAudioAppend(ctx context.Context, client *clientConne
 	})
 }
 
-// handleStreamMessage 将非 append stream 事件转交给 Session 统一控制。
-func (s *Server) handleStreamMessage(ctx context.Context, client *clientConnector, event streamEvent) {
+// handleInputAudioCommit 处理端侧音频提交事件。
+func (s *Server) handleInputAudioCommit(ctx context.Context, client *clientConnector, event streamEvent) {
 	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
 	s.reportEvent(ctx, client.id, event)
 	client.pushMessage(ctx, event)
+	if err := client.sendStreamEvent(ctx, inputAudioCommittedEvent); err != nil {
+		s.reportError(ctx, client.id, fmt.Errorf("send input audio committed: %w", err))
+	}
+}
+
+// handleResponseCreate 处理端侧显式创建回复事件。
+func (s *Server) handleResponseCreate(ctx context.Context, client *clientConnector, event streamEvent) {
+	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
+	s.reportEvent(ctx, client.id, event)
+	client.pushMessage(ctx, event)
+	s.startMockResponse(ctx, client)
+}
+
+// handleResponseCancel 处理端侧取消回复事件。
+func (s *Server) handleResponseCancel(ctx context.Context, client *clientConnector, event streamEvent) {
+	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
+	s.reportEvent(ctx, client.id, event)
+	client.pushMessage(ctx, event)
+	client.cancelMockResponse()
+	if err := client.sendStreamEvent(ctx, responseDoneEvent); err != nil {
+		s.reportError(ctx, client.id, fmt.Errorf("send response done: %w", err))
+	}
+}
+
+// handleSessionUpdate 处理端侧会话更新事件。
+func (s *Server) handleSessionUpdate(ctx context.Context, client *clientConnector, event streamEvent) {
+	log.Infof("client_id=%s websocket stream event received event_type=%s event_id=%s", client.id, event.Type, event.EventID)
+	s.reportEvent(ctx, client.id, event)
+	client.pushMessage(ctx, event)
+	if err := client.sendStreamEvent(ctx, sessionUpdatedEvent); err != nil {
+		s.reportError(ctx, client.id, fmt.Errorf("send session updated: %w", err))
+	}
+}
+
+// handleUnknownStreamEvent 处理当前未支持的端侧 stream 事件。
+func (s *Server) handleUnknownStreamEvent(ctx context.Context, client *clientConnector, event streamEvent) {
+	log.Warnf("client_id=%s websocket stream event ignored event_type=%s event_id=%s", client.id, event.Type, event.EventID)
+	s.reportEvent(ctx, client.id, event)
+	client.pushMessage(ctx, event)
+	if err := client.sendErrorEvent(ctx, "unsupported event type: "+event.Type); err != nil {
+		s.reportError(ctx, client.id, fmt.Errorf("send error event: %w", err))
+	}
 }
 
 // reserveClient 为指定客户端预留 stream 连接，防止同一客户端重复建联。
@@ -330,6 +413,7 @@ func (s *Server) unregisterClient(clientID string, err error) {
 	if client == nil {
 		return
 	}
+	client.cancelMockResponse()
 	if err != nil && !isNormalClose(err) {
 		s.reportError(context.Background(), clientID, err)
 	}
@@ -418,6 +502,13 @@ func (client *clientConnector) SendAudio(ctx context.Context, frame media.Frame)
 
 // SendMessage 把消息作为 JSON/text 直接写回 stream 连接。
 func (client *clientConnector) SendMessage(ctx context.Context, msg media.Message) error {
+	if len(msg.Payload) == 0 {
+		payload, err := client.packConnectorMessage(msg)
+		if err != nil {
+			return err
+		}
+		return client.sendStreamPayload(ctx, payload)
+	}
 	return client.sendStreamPayload(ctx, msg.Payload)
 }
 
@@ -452,6 +543,7 @@ func (client *clientConnector) Close(ctx context.Context, reason string) error {
 	if reason == "" {
 		reason = "connector closed"
 	}
+	client.cancelMockResponse()
 	for _, ch := range client.channels() {
 		ch.writeMu.Lock()
 		_ = ch.conn.Close(coderws.StatusNormalClosure, reason)
@@ -474,6 +566,92 @@ func (s *Server) write(ctx context.Context, ch *channelConn, msgType coderws.Mes
 	ch.writeMu.Lock()
 	defer ch.writeMu.Unlock()
 	return ch.conn.Write(writeCtx, msgType, payload)
+}
+
+// startMockResponse 启动当前客户端的一次最小下行模拟回复流程。
+func (s *Server) startMockResponse(ctx context.Context, client *clientConnector) {
+	client.responseMu.Lock()
+	if client.responseCancel != nil {
+		client.responseCancel()
+	}
+	client.responseID++
+	responseID := client.responseID
+	responseCtx, cancel := context.WithCancel(context.Background())
+	client.responseCancel = cancel
+	client.responseMu.Unlock()
+
+	go func() {
+		defer client.clearMockResponse(responseID)
+		if err := s.runMockResponse(responseCtx, client); err != nil && !errors.Is(err, context.Canceled) {
+			s.reportError(ctx, client.id, fmt.Errorf("run mock response: %w", err))
+		}
+	}()
+}
+
+// runMockResponse 按端侧串流协议下发一轮最小模拟回复。
+func (s *Server) runMockResponse(ctx context.Context, client *clientConnector) error {
+	if err := client.sendStreamEvent(ctx, responseCreatedEvent); err != nil {
+		return err
+	}
+	if err := waitMockResponseGap(ctx); err != nil {
+		return err
+	}
+	if err := client.sendDeltaEvent(ctx, responseAudioTranscriptDeltaEvent, mockTranscriptDelta); err != nil {
+		return err
+	}
+	if err := waitMockResponseGap(ctx); err != nil {
+		return err
+	}
+	if s.callbacks.OnResponseAudio != nil {
+		frame := media.Frame{
+			SessionID: client.id,
+			Direction: media.DirectionDownlink,
+			Timestamp: time.Now(),
+			Payload:   makeSilentPCM(mockResponseAudioDuration),
+			Format:    media.DefaultPCM16Format(),
+			Metadata: map[string]string{
+				"event_type": responseAudioDeltaType,
+				"source":     "websocket_mock_response",
+			},
+		}
+		if err := s.callbacks.OnResponseAudio(ctx, client.id, frame); err != nil {
+			return err
+		}
+		if err := waitMockResponseGap(ctx); err != nil {
+			return err
+		}
+	}
+	if err := client.sendTranscriptionDone(ctx, ""); err != nil {
+		return err
+	}
+	if err := waitMockResponseGap(ctx); err != nil {
+		return err
+	}
+	return client.sendStreamEvent(ctx, responseDoneEvent)
+}
+
+// waitMockResponseGap 在模拟回复事件之间留出短间隔。
+func waitMockResponseGap(ctx context.Context) error {
+	timer := time.NewTimer(mockResponseSendGap)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// makeSilentPCM 生成用于联调的 PCM16LE 静音帧。
+func makeSilentPCM(duration time.Duration) []byte {
+	if duration <= 0 {
+		duration = mockResponseAudioDuration
+	}
+	samples := int(duration.Seconds() * float64(media.DefaultAudioSampleRate) * float64(media.DefaultAudioChannels))
+	if samples <= 0 {
+		samples = 1
+	}
+	return make([]byte, samples*pcm16BytesPerSample)
 }
 
 // setStream 记录客户端的 stream channel，并清除建联中的 pending 状态。
@@ -561,6 +739,70 @@ func packResponseAudioDelta(base64Audio []byte) ([]byte, error) {
 	})
 }
 
+// packConnectorMessage 将内部中性消息打包成端侧 stream JSON。
+func (client *clientConnector) packConnectorMessage(msg media.Message) ([]byte, error) {
+	switch msg.Type {
+	case media.MessageSpeechStarted:
+		return packSimpleStreamEvent(speechStartedEvent)
+	case media.MessageSpeechStopped:
+		return packSimpleStreamEvent(speechStoppedEvent)
+	default:
+		return nil, fmt.Errorf("client_id=%s unsupported connector message type %s", client.id, msg.Type)
+	}
+}
+
+// sendStreamEvent 向端侧发送不带额外 payload 的 stream 事件。
+func (client *clientConnector) sendStreamEvent(ctx context.Context, eventType string) error {
+	payload, err := packSimpleStreamEvent(eventType)
+	if err != nil {
+		return err
+	}
+	return client.sendStreamPayload(ctx, payload)
+}
+
+// sendDeltaEvent 向端侧发送带 delta 字段的 stream 事件。
+func (client *clientConnector) sendDeltaEvent(ctx context.Context, eventType string, delta string) error {
+	payload, err := json.Marshal(struct {
+		Type  string `json:"type"`
+		Delta string `json:"delta"`
+	}{Type: eventType, Delta: delta})
+	if err != nil {
+		return err
+	}
+	return client.sendStreamPayload(ctx, payload)
+}
+
+// sendTranscriptionDone 向端侧发送模拟输入转写完成事件。
+func (client *clientConnector) sendTranscriptionDone(ctx context.Context, transcript string) error {
+	payload, err := json.Marshal(struct {
+		Type       string `json:"type"`
+		Transcript string `json:"transcript"`
+	}{Type: transcriptionDoneEvent, Transcript: transcript})
+	if err != nil {
+		return err
+	}
+	return client.sendStreamPayload(ctx, payload)
+}
+
+// sendErrorEvent 向端侧发送最小错误事件。
+func (client *clientConnector) sendErrorEvent(ctx context.Context, message string) error {
+	payload, err := json.Marshal(struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	}{Type: errorEvent, Message: message})
+	if err != nil {
+		return err
+	}
+	return client.sendStreamPayload(ctx, payload)
+}
+
+// packSimpleStreamEvent 将只有 type 字段的控制事件打包为 JSON。
+func packSimpleStreamEvent(eventType string) ([]byte, error) {
+	return json.Marshal(struct {
+		Type string `json:"type"`
+	}{Type: eventType})
+}
+
 // clearOutputs 清理客户端绑定的数据输出端。
 func (client *clientConnector) clearOutputs() {
 	client.mu.Lock()
@@ -597,7 +839,7 @@ func (client *clientConnector) pushMessage(ctx context.Context, event streamEven
 	}
 }
 
-// pushInvalidMessage 把非法 JSON 作为消息交给 Session 统一生成错误响应。
+// pushInvalidMessage 把非法 JSON 作为中性消息交给 Session 记录或桥接。
 func (client *clientConnector) pushInvalidMessage(ctx context.Context, payload []byte, parseErr error) {
 	output := client.boundMessageOutput()
 	if output == nil {
@@ -615,6 +857,25 @@ func (client *clientConnector) pushInvalidMessage(ctx context.Context, payload [
 	}
 	if err := output.PushMessage(ctx, msg); err != nil {
 		client.server.reportError(ctx, client.id, err)
+	}
+}
+
+// cancelMockResponse 停止当前正在运行的模拟回复流程。
+func (client *clientConnector) cancelMockResponse() {
+	client.responseMu.Lock()
+	defer client.responseMu.Unlock()
+	if client.responseCancel != nil {
+		client.responseCancel()
+		client.responseCancel = nil
+	}
+}
+
+// clearMockResponse 清理已结束的模拟回复取消函数。
+func (client *clientConnector) clearMockResponse(responseID uint64) {
+	client.responseMu.Lock()
+	defer client.responseMu.Unlock()
+	if client.responseID == responseID {
+		client.responseCancel = nil
 	}
 }
 
