@@ -10,7 +10,7 @@ import (
 // TestMockStageSavePCM 验证语音增强 mock stage 会保存 PCM 数据。
 func TestMockStageSavePCM(t *testing.T) {
 	dir := t.TempDir()
-	stage, err := NewMockStage(dir)
+	stage, err := NewMockStage(dir, nil)
 	if err != nil {
 		t.Fatalf("NewMockStage: %v", err)
 	}

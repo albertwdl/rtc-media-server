@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"rtc-media-server/internal/log"
 	"rtc-media-server/internal/media"
@@ -21,6 +22,7 @@ const (
 // 当前实现不做真实算法处理，只把经过该 stage 的 PCM 追加保存到本地文件。
 type MockStage struct {
 	outputDir string
+	getRTT    func() (time.Duration, bool)
 
 	mu    sync.Mutex
 	files map[string]*os.File
@@ -29,7 +31,7 @@ type MockStage struct {
 
 // NewMockStage 创建模拟 AEC+AGC+ANS 的 pipeline stage。
 // outputDir 用于存放每个 client 独立的 PCM 文件。
-func NewMockStage(outputDir string) (*MockStage, error) {
+func NewMockStage(outputDir string, getRTT func() (time.Duration, bool)) (*MockStage, error) {
 	if outputDir == "" {
 		outputDir = filepath.Join("runtime", "pcm")
 	}
@@ -38,6 +40,7 @@ func NewMockStage(outputDir string) (*MockStage, error) {
 	}
 	return &MockStage{
 		outputDir: outputDir,
+		getRTT:    getRTT,
 		files:     make(map[string]*os.File),
 	}, nil
 }
@@ -67,11 +70,12 @@ func (s *MockStage) Process(ctx context.Context, frame media.Frame) (media.Frame
 			return frame, err
 		}
 		log.Infof(
-			"client_id=%s audio enhancement processed direction=%s codec=%s bytes=%d file=%s",
+			"client_id=%s audio enhancement processed direction=%s codec=%s bytes=%d rtt_ms=%s file=%s",
 			frame.SessionID,
 			frame.Direction,
 			frame.Format.Codec,
 			len(frame.Payload),
+			s.rttMilliseconds(),
 			s.filePath(frame.SessionID),
 		)
 	}
@@ -147,6 +151,18 @@ func (s *MockStage) fileLocked(clientID string) (*os.File, error) {
 // filePath 返回指定 client 的 PCM 输出文件路径。
 func (s *MockStage) filePath(clientID string) string {
 	return filepath.Join(s.outputDir, safeFileName(clientID)+".pcm")
+}
+
+// rttMilliseconds 返回当前 Session 最近一次 RTT 毫秒数。
+func (s *MockStage) rttMilliseconds() string {
+	if s.getRTT == nil {
+		return ""
+	}
+	rtt, ok := s.getRTT()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("%d", rtt.Milliseconds())
 }
 
 // safeFileName 将客户端标识转换为可用作文件名的安全字符串。

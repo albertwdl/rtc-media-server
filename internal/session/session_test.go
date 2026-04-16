@@ -68,6 +68,29 @@ func TestSessionDownlinkPipelineConsumesToClient(t *testing.T) {
 	}
 }
 
+// TestSessionUpdateRTTFeedsAudioEnhancement 验证 3A stage 可通过 Session getter 读取 RTT。
+func TestSessionUpdateRTTFeedsAudioEnhancement(t *testing.T) {
+	client := &testClientConnector{
+		id:       "client-rtt-downlink",
+		done:     make(chan struct{}),
+		consumed: make(chan media.Frame, 1),
+	}
+	sess, err := NewSession(context.Background(), testConfig(), client)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer sess.Close(context.Background(), "test done")
+	sess.UpdateRTT(25 * time.Millisecond)
+
+	rtt, ok := sess.RTT()
+	if !ok {
+		t.Fatal("rtt was not cached")
+	}
+	if rtt != 25*time.Millisecond {
+		t.Fatalf("rtt = %s", rtt)
+	}
+}
+
 // TestSessionServiceMessageBridge 验证服务侧消息会通过 Session 桥接到端侧。
 func TestSessionServiceMessageBridge(t *testing.T) {
 	client := &testClientConnector{

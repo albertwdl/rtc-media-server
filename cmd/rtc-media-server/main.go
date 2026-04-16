@@ -79,6 +79,11 @@ func main() {
 			}
 			return sess.EnqueueDownlink(ctx, frame)
 		},
+		OnRTT: func(ctx context.Context, clientID string, rtt time.Duration) {
+			if sess, ok := sessionManager.Get(clientID); ok {
+				sess.UpdateRTT(rtt)
+			}
+		},
 		OnError: func(ctx context.Context, clientID string, err error) {
 			if sess, ok := sessionManager.Get(clientID); ok {
 				sess.OnError(ctx, err)

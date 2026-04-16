@@ -459,10 +459,13 @@ func TestDuplicateChannelRejected(t *testing.T) {
 	}
 }
 
-// TestRTTUsesStreamChannel 验证 RTT 通过 stream channel 测量并缓存。
-func TestRTTUsesStreamChannel(t *testing.T) {
+// TestBackgroundRTTUpdatesSession 验证后台 RTT loop 会更新 Session 缓存。
+func TestBackgroundRTTUpdatesSession(t *testing.T) {
 	sessionCh := make(chan *session.Session, 1)
-	_, url, _ := newTestTLSServer(t, func(sess *session.Session) {
+	server, url, _ := newTestTLSServerWithConfig(t, func(cfg *Config) {
+		cfg.RTTInterval = 20 * time.Millisecond
+		cfg.WriteTimeout = time.Second
+	}, func(sess *session.Session) {
 		sessionCh <- sess
 	})
 
@@ -483,18 +486,11 @@ func TestRTTUsesStreamChannel(t *testing.T) {
 			}
 		}
 	}()
+	rttCtx, rttCancel := context.WithCancel(ctx)
+	defer rttCancel()
+	go server.rttLoop(rttCtx)
 
-	rtt, err := sess.MeasureRTT(ctx)
-	if err != nil {
-		t.Fatalf("MeasureRTT: %v", err)
-	}
-	if rtt <= 0 {
-		t.Fatalf("rtt = %s", rtt)
-	}
-	cached, ok := sess.RTT()
-	if !ok || cached <= 0 {
-		t.Fatalf("cached rtt = %s ok=%v", cached, ok)
-	}
+	waitForSessionRTT(t, ctx, sess)
 }
 
 // TestOnConnectErrorRejectsConnection 验证 OnConnect 返回错误时连接会被关闭并清理。
@@ -579,6 +575,11 @@ func streamAppendJSON(t *testing.T, alaw []byte) []byte {
 
 // newTestTLSServer 创建使用自签证书和真实 Session 链路的 WebSocket 测试服务。
 func newTestTLSServer(t *testing.T, onSession func(*session.Session), callbackOpts ...func(*Callbacks)) (*Server, string, *http.Client) {
+	return newTestTLSServerWithConfig(t, nil, onSession, callbackOpts...)
+}
+
+// newTestTLSServerWithConfig 创建可覆盖 WebSocket 配置的测试服务。
+func newTestTLSServerWithConfig(t *testing.T, configure func(*Config), onSession func(*session.Session), callbackOpts ...func(*Callbacks)) (*Server, string, *http.Client) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -586,6 +587,9 @@ func newTestTLSServer(t *testing.T, onSession func(*session.Session), callbackOp
 	cfg := DefaultConfig()
 	cfg.TLS.CertFile = cert
 	cfg.TLS.KeyFile = key
+	if configure != nil {
+		configure(&cfg)
+	}
 	manager := session.NewManager(session.Config{
 		UplinkQueueSize:   8,
 		DownlinkQueueSize: 8,
@@ -618,6 +622,11 @@ func newTestTLSServer(t *testing.T, onSession func(*session.Session), callbackOp
 				return nil
 			}
 			return sess.EnqueueDownlink(ctx, frame)
+		},
+		OnRTT: func(ctx context.Context, clientID string, rtt time.Duration) {
+			if sess, ok := manager.Get(clientID); ok {
+				sess.UpdateRTT(rtt)
+			}
 		},
 	}
 	for _, opt := range callbackOpts {
@@ -709,6 +718,24 @@ func waitForSession(t *testing.T, ctx context.Context, sessionCh <-chan *session
 		t.Fatal("timed out waiting for session")
 	}
 	return nil
+}
+
+// waitForSessionRTT 等待 Session 缓存到后台 RTT 测量结果。
+func waitForSessionRTT(t *testing.T, ctx context.Context, sess *session.Session) time.Duration {
+	t.Helper()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		rtt, ok := sess.RTT()
+		if ok && rtt > 0 {
+			return rtt
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			t.Fatal("timed out waiting for session rtt")
+		}
+	}
 }
 
 // serviceCount 返回真实 mock service connector 已消费的上行帧数量。

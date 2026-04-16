@@ -126,7 +126,7 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 		OnStageEvent: s.OnStageEvent,
 	})
 
-	engine, err := audioenhancement.NewMockStage("")
+	engine, err := audioenhancement.NewMockStage("", s.RTT)
 	if err != nil {
 		cleanup("create audio enhancement failed")
 		return nil, err
@@ -292,17 +292,15 @@ func (s *Session) EnqueueDownlink(ctx context.Context, frame media.Frame) error 
 	return s.downlink.Push(ctx, frame)
 }
 
-// MeasureRTT 通过客户端 Connector 主动测量 RTT 并缓存结果。
-func (s *Session) MeasureRTT(ctx context.Context) (time.Duration, error) {
-	rtt, err := s.clientConnector.MeasureRTT(ctx)
-	if err != nil {
-		return 0, err
+// UpdateRTT 更新当前 Session 最近一次 RTT，供需要连接状态的 stage 读取。
+func (s *Session) UpdateRTT(rtt time.Duration) {
+	if rtt <= 0 {
+		return
 	}
 	s.mu.Lock()
 	s.rtt = rtt
 	s.ok = true
 	s.mu.Unlock()
-	return rtt, nil
 }
 
 // RTT 返回最近一次成功测量的 RTT。

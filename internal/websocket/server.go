@@ -61,6 +61,7 @@ type Callbacks struct {
 	OnDisconnect    func(ctx context.Context, clientID string, err error)
 	OnEvent         func(ctx context.Context, clientID string, event media.Event)
 	OnResponseAudio func(ctx context.Context, clientID string, frame media.Frame) error
+	OnRTT           func(ctx context.Context, clientID string, rtt time.Duration)
 	OnError         func(ctx context.Context, clientID string, err error)
 }
 
@@ -453,10 +454,14 @@ func (s *Server) rttLoop(ctx context.Context) {
 					continue
 				}
 				pingCtx, cancel := context.WithTimeout(ctx, s.cfg.WriteTimeout)
-				_, err := client.MeasureRTT(pingCtx)
+				rtt, err := client.MeasureRTT(pingCtx)
 				cancel()
 				if err != nil {
 					s.reportError(ctx, client.id, fmt.Errorf("measure rtt: %w", err))
+					continue
+				}
+				if s.callbacks.OnRTT != nil {
+					s.callbacks.OnRTT(ctx, client.id, rtt)
 				}
 			}
 		}
@@ -535,7 +540,8 @@ func (client *clientConnector) MeasureRTT(ctx context.Context) (time.Duration, e
 	if err != nil {
 		return 0, err
 	}
-	return time.Since(start), nil
+	rtt := time.Since(start)
+	return rtt, nil
 }
 
 // Close 关闭客户端 Connector 持有的所有 channel。
