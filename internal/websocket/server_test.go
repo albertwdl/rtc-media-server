@@ -299,7 +299,6 @@ func TestResponseCreateSendsMockResponseSequence(t *testing.T) {
 		"response.created",
 		"response.audio_transcript.delta",
 		"response.audio.delta",
-		"conversation.item.input_audio_transcription.completed",
 		"response.done",
 	}
 	for _, eventType := range want {
@@ -338,18 +337,8 @@ func TestDownlinkPipelineSendsResponseAudioDelta(t *testing.T) {
 	if err := sess.EnqueueDownlink(ctx, media.Frame{Payload: pcm, Format: media.DefaultPCM16Format()}); err != nil {
 		t.Fatalf("EnqueueDownlink: %v", err)
 	}
-	_, got, err := conn.Read(ctx)
-	if err != nil {
-		t.Fatalf("read sent stream pcm: %v", err)
-	}
-
-	var payload struct {
-		Type  string `json:"type"`
-		Delta string `json:"delta"`
-	}
-	if err := json.Unmarshal(got, &payload); err != nil {
-		t.Fatalf("sent payload was not json: %v", err)
-	}
+	expectEventType(t, ctx, conn, "response.created")
+	payload := readEventPayload(t, ctx, conn)
 	if payload.Type != "response.audio.delta" {
 		t.Fatalf("type = %q", payload.Type)
 	}
@@ -377,13 +366,13 @@ func TestServiceMessageForwardsToClient(t *testing.T) {
 	sess := waitForSession(t, ctx, sessionCh)
 
 	service, ok := sess.ServiceConnector().(interface {
-		PushMessage(context.Context, media.Message) error
+		PushMessage(context.Context, connector.Message) error
 	})
 	if !ok {
 		t.Fatalf("service connector %T does not expose PushMessage", sess.ServiceConnector())
 	}
 	want := []byte(`{"type":"response.text.delta","text":"hello"}`)
-	if err := service.PushMessage(ctx, media.Message{
+	if err := service.PushMessage(ctx, connector.Message{
 		Type:    "response.text.delta",
 		Payload: want,
 	}); err != nil {
@@ -615,13 +604,6 @@ func newTestTLSServerWithConfig(t *testing.T, configure func(*Config), onSession
 			if sess, ok := manager.Get(clientID); ok {
 				sess.OnEvent(ctx, event)
 			}
-		},
-		OnResponseAudio: func(ctx context.Context, clientID string, frame media.Frame) error {
-			sess, ok := manager.Get(clientID)
-			if !ok {
-				return nil
-			}
-			return sess.EnqueueDownlink(ctx, frame)
 		},
 		OnRTT: func(ctx context.Context, clientID string, rtt time.Duration) {
 			if sess, ok := manager.Get(clientID); ok {

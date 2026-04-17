@@ -15,13 +15,6 @@ const (
 )
 
 const (
-	// MessageSpeechStarted 表示内部检测到上行语音开始。
-	MessageSpeechStarted = "speech_started"
-	// MessageSpeechStopped 表示内部检测到上行语音结束。
-	MessageSpeechStopped = "speech_stopped"
-)
-
-const (
 	// DefaultAudioSampleRate 是端侧默认 PCM16 采样率。
 	DefaultAudioSampleRate = 8000
 	// DefaultAudioChannels 是端侧默认声道数。
@@ -55,16 +48,6 @@ type Frame struct {
 	Timestamp time.Time
 	Payload   []byte
 	Format    Format
-	Metadata  map[string]string
-}
-
-// Message 是 Connector 之间透传的非媒体业务消息。
-// 消息、控制 JSON 和错误事件不进入媒体 pipeline，而是由 Session 做桥接。
-type Message struct {
-	SessionID string
-	Direction Direction
-	Type      string
-	Payload   []byte
 	Metadata  map[string]string
 }
 
@@ -112,11 +95,6 @@ func (fn InputFunc) Push(ctx context.Context, frame Frame) error {
 	return fn(ctx, frame)
 }
 
-// AudioOutput 表示 Connector 收到外部音频后推送到的输出端。
-type AudioOutput interface {
-	Push(ctx context.Context, frame Frame) error
-}
-
 // Output 表示 pipeline 处理完成后的输出端。
 type Output interface {
 	SendAudio(ctx context.Context, frame Frame) error
@@ -128,19 +106,6 @@ type OutputFunc func(ctx context.Context, frame Frame) error
 // SendAudio 调用函数型 Output 包装的发送函数。
 func (fn OutputFunc) SendAudio(ctx context.Context, frame Frame) error {
 	return fn(ctx, frame)
-}
-
-// MessageOutput 表示 Connector 收到外部消息后推送到的输出端。
-type MessageOutput interface {
-	PushMessage(ctx context.Context, msg Message) error
-}
-
-// MessageOutputFunc 允许用函数快速实现 MessageOutput。
-type MessageOutputFunc func(ctx context.Context, msg Message) error
-
-// PushMessage 调用函数型 MessageOutput 包装的推送函数。
-func (fn MessageOutputFunc) PushMessage(ctx context.Context, msg Message) error {
-	return fn(ctx, msg)
 }
 
 // Pipeline 定义媒体处理管线的最小抽象。

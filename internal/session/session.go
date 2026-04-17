@@ -59,6 +59,8 @@ type Session struct {
 	err error
 	rtt time.Duration
 	ok  bool
+
+	responseActive bool
 }
 
 // NewManager 创建业务 Session 管理器。
@@ -168,7 +170,7 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 		cleanup("bind service connector audio output failed")
 		return nil, err
 	}
-	if err := service.BindMessageOutput(media.MessageOutputFunc(s.OnServiceMessage)); err != nil {
+	if err := service.BindMessageOutput(connector.MessageOutputFunc(s.OnServiceMessage)); err != nil {
 		cleanup("bind service connector message output failed")
 		return nil, err
 	}
@@ -176,7 +178,7 @@ func NewSession(ctx context.Context, cfg Config, client connector.ClientConnecto
 		cleanup("bind client connector audio output failed")
 		return nil, err
 	}
-	if err := client.BindMessageOutput(media.MessageOutputFunc(s.OnClientMessage)); err != nil {
+	if err := client.BindMessageOutput(connector.MessageOutputFunc(s.OnClientMessage)); err != nil {
 		cleanup("bind client connector message output failed")
 		return nil, err
 	}
@@ -289,6 +291,9 @@ func (s *Session) EnqueueDownlink(ctx context.Context, frame media.Frame) error 
 	if frame.Timestamp.IsZero() {
 		frame.Timestamp = time.Now()
 	}
+	if err := s.ensureResponseCreated(ctx); err != nil {
+		return err
+	}
 	return s.downlink.Push(ctx, frame)
 }
 
@@ -347,37 +352,116 @@ func (s *Session) OnStageEvent(ctx context.Context, event media.StageEvent) {
 	if !ok {
 		return
 	}
-	if err := s.OnServiceMessage(ctx, media.Message{
-		SessionID: s.id,
-		Direction: media.DirectionDownlink,
-		Type:      eventType,
-		Metadata: map[string]string{
-			"stage":      event.Stage,
-			"stage_type": event.Type,
-		},
-	}); err != nil {
-		s.OnError(ctx, fmt.Errorf("send stage event: %w", err))
+	switch eventType {
+	case connector.MessageSpeechStarted:
+		if err := s.sendClientMessage(ctx, connector.MessageSpeechStarted, nil); err != nil {
+			s.OnError(ctx, fmt.Errorf("send speech started: %w", err))
+		}
+	case connector.MessageSpeechStopped:
+		if err := s.sendClientMessage(ctx, connector.MessageSpeechStopped, nil); err != nil {
+			s.OnError(ctx, fmt.Errorf("send speech stopped: %w", err))
+			return
+		}
+		if err := s.sendClientMessage(ctx, connector.MessageInputCommit, nil); err != nil {
+			s.OnError(ctx, fmt.Errorf("send input committed: %w", err))
+			return
+		}
+		if err := s.requestServiceResponse(ctx); err != nil {
+			s.OnError(ctx, fmt.Errorf("request service response: %w", err))
+		}
 	}
 }
 
-// OnClientMessage 把端侧非媒体消息桥接到服务侧 Connector。
-func (s *Session) OnClientMessage(ctx context.Context, msg media.Message) error {
+// OnClientMessage 处理端侧非媒体控制消息。
+func (s *Session) OnClientMessage(ctx context.Context, msg connector.Message) error {
 	msg.SessionID = s.id
 	msg.Direction = media.DirectionUplink
+	switch msg.Type {
+	case connector.MessageSessionUpdated:
+		return nil
+	case connector.MessageInputCommit:
+		if err := s.sendClientMessage(ctx, connector.MessageInputCommit, nil); err != nil {
+			return err
+		}
+		return s.requestServiceResponse(ctx)
+	case connector.MessageResponseCreate:
+		return s.requestServiceResponse(ctx)
+	case connector.MessageResponseCancel:
+		return s.serviceConnector.SendMessage(ctx, connector.Message{
+			SessionID: s.id,
+			Direction: media.DirectionUplink,
+			Type:      connector.MessageResponseCancel,
+		})
+	default:
+		log.Warnf("client_id=%s session ignored client message type=%s", s.id, msg.Type)
+		return nil
+	}
+}
+
+// OnServiceMessage 根据服务侧返回驱动端侧 ClientConnector。
+func (s *Session) OnServiceMessage(ctx context.Context, msg connector.Message) error {
+	msg.SessionID = s.id
+	msg.Direction = media.DirectionDownlink
+	switch msg.Type {
+	case connector.MessageResponseTextDelta:
+		if err := s.ensureResponseCreated(ctx); err != nil {
+			return err
+		}
+		return s.sendClientMessage(ctx, connector.MessageResponseTextDelta, msg.Payload)
+	case connector.MessageResponseDone:
+		if err := s.sendClientMessage(ctx, connector.MessageResponseDone, nil); err != nil {
+			return err
+		}
+		s.setResponseActive(false)
+		return nil
+	default:
+		if len(msg.Payload) > 0 {
+			return s.clientConnector.SendMessage(ctx, msg)
+		}
+		log.Warnf("client_id=%s session ignored service message type=%s", s.id, msg.Type)
+		return nil
+	}
+}
+
+// requestServiceResponse 通知服务侧基于当前输入生成回复。
+func (s *Session) requestServiceResponse(ctx context.Context) error {
 	if s.serviceConnector == nil {
 		return nil
 	}
-	return s.serviceConnector.SendMessage(ctx, msg)
+	return s.serviceConnector.SendMessage(ctx, connector.Message{
+		SessionID: s.id,
+		Direction: media.DirectionUplink,
+		Type:      connector.MessageResponseCreate,
+	})
 }
 
-// OnServiceMessage 把服务侧非媒体消息桥接到端侧 Connector。
-func (s *Session) OnServiceMessage(ctx context.Context, msg media.Message) error {
-	msg.SessionID = s.id
-	msg.Direction = media.DirectionDownlink
-	if s.clientConnector == nil {
+// ensureResponseCreated 确保本轮回复开始事件已经发给端侧。
+func (s *Session) ensureResponseCreated(ctx context.Context) error {
+	s.mu.Lock()
+	if s.responseActive {
+		s.mu.Unlock()
 		return nil
 	}
-	return s.clientConnector.SendMessage(ctx, msg)
+	s.responseActive = true
+	s.mu.Unlock()
+	return s.sendClientMessage(ctx, connector.MessageResponseCreate, nil)
+}
+
+// sendClientMessage 向客户端 Connector 发送中性非媒体消息。
+func (s *Session) sendClientMessage(ctx context.Context, msgType string, payload []byte) error {
+	return s.clientConnector.SendMessage(ctx, connector.Message{
+		SessionID: s.id,
+		Direction: media.DirectionDownlink,
+		Type:      msgType,
+		Payload:   payload,
+	})
+}
+
+// setResponseActive 更新当前回复状态。
+func (s *Session) setResponseActive(active bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.responseActive = active
 }
 
 // OnError 记录 Session 范围内的错误。
@@ -396,9 +480,9 @@ func (s *Session) setErr(err error) {
 func stageEventToClientMessageType(eventType string) (string, bool) {
 	switch eventType {
 	case controller.EventSpeechStarted:
-		return media.MessageSpeechStarted, true
+		return connector.MessageSpeechStarted, true
 	case controller.EventSpeechStopped:
-		return media.MessageSpeechStopped, true
+		return connector.MessageSpeechStopped, true
 	default:
 		return "", false
 	}

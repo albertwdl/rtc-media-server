@@ -72,13 +72,6 @@ func main() {
 				sess.OnEvent(ctx, event)
 			}
 		},
-		OnResponseAudio: func(ctx context.Context, clientID string, frame media.Frame) error {
-			sess, ok := sessionManager.Get(clientID)
-			if !ok {
-				return nil
-			}
-			return sess.EnqueueDownlink(ctx, frame)
-		},
 		OnRTT: func(ctx context.Context, clientID string, rtt time.Duration) {
 			if sess, ok := sessionManager.Get(clientID); ok {
 				sess.UpdateRTT(rtt)

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/controller"
 	"rtc-media-server/internal/media"
 )
@@ -96,7 +97,7 @@ func TestSessionServiceMessageBridge(t *testing.T) {
 	client := &testClientConnector{
 		id:       "client-msg",
 		done:     make(chan struct{}),
-		messages: make(chan media.Message, 2),
+		messages: make(chan connector.Message, 2),
 	}
 	sess, err := NewSession(context.Background(), testConfig(), client)
 	if err != nil {
@@ -111,12 +112,12 @@ func TestSessionServiceMessageBridge(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	service, ok := sess.ServiceConnector().(interface {
-		PushMessage(context.Context, media.Message) error
+		PushMessage(context.Context, connector.Message) error
 	})
 	if !ok {
 		t.Fatalf("service connector %T does not expose PushMessage", sess.ServiceConnector())
 	}
-	if err := service.PushMessage(ctx, media.Message{
+	if err := service.PushMessage(ctx, connector.Message{
 		Type:    "response.text.delta",
 		Payload: []byte(`{"type":"response.text.delta","text":"ok"}`),
 	}); err != nil {
@@ -141,7 +142,7 @@ func TestSessionClientMessageBridge(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	if err := sess.OnClientMessage(ctx, media.Message{Type: "connector.command"}); err != nil {
+	if err := sess.OnClientMessage(ctx, connector.Message{Type: connector.MessageResponseCreate}); err != nil {
 		t.Fatalf("client message: %v", err)
 	}
 	waitForServiceMessageCount(t, ctx, sess, 1)
@@ -152,7 +153,7 @@ func TestSessionStageSpeechEventsForwardToClient(t *testing.T) {
 	client := &testClientConnector{
 		id:       "client-speech",
 		done:     make(chan struct{}),
-		messages: make(chan media.Message, 2),
+		messages: make(chan connector.Message, 3),
 	}
 	sess, err := NewSession(context.Background(), testConfig(), client)
 	if err != nil {
@@ -175,7 +176,7 @@ func TestSessionStageSpeechEventsForwardToClient(t *testing.T) {
 		Stage:     "vad_mock",
 	})
 
-	want := []string{media.MessageSpeechStarted, media.MessageSpeechStopped}
+	want := []string{connector.MessageSpeechStarted, connector.MessageSpeechStopped}
 	for _, eventType := range want {
 		expectClientMessageType(t, ctx, client.messages, eventType)
 	}
@@ -262,10 +263,10 @@ func testConfig() Config {
 type testClientConnector struct {
 	id            string
 	done          chan struct{}
-	audioOutput   media.AudioOutput
-	messageOutput media.MessageOutput
+	audioOutput   connector.AudioOutput
+	messageOutput connector.MessageOutput
 	consumed      chan media.Frame
-	messages      chan media.Message
+	messages      chan connector.Message
 	closed        bool
 	mu            sync.Mutex
 }
@@ -277,13 +278,13 @@ func (c *testClientConnector) ID() string { return c.id }
 func (c *testClientConnector) Protocol() string { return "test_client" }
 
 // BindAudioOutput 绑定测试客户端收到音频后要推送到的输出端。
-func (c *testClientConnector) BindAudioOutput(output media.AudioOutput) error {
+func (c *testClientConnector) BindAudioOutput(output connector.AudioOutput) error {
 	c.audioOutput = output
 	return nil
 }
 
 // BindMessageOutput 绑定测试客户端收到消息后要推送到的输出端。
-func (c *testClientConnector) BindMessageOutput(output media.MessageOutput) error {
+func (c *testClientConnector) BindMessageOutput(output connector.MessageOutput) error {
 	c.messageOutput = output
 	return nil
 }
@@ -301,7 +302,12 @@ func (c *testClientConnector) SendAudio(ctx context.Context, frame media.Frame) 
 }
 
 // SendMessage 记录测试下行消息。
-func (c *testClientConnector) SendMessage(ctx context.Context, msg media.Message) error {
+func (c *testClientConnector) SendMessage(ctx context.Context, msg connector.Message) error {
+	return c.recordMessage(ctx, msg)
+}
+
+// recordMessage 写入测试消息通道。
+func (c *testClientConnector) recordMessage(ctx context.Context, msg connector.Message) error {
 	if c.messages != nil {
 		select {
 		case c.messages <- msg:
@@ -353,7 +359,7 @@ func waitForServiceMessageCount(t *testing.T, ctx context.Context, sess *Session
 }
 
 // expectClientMessageType 等待测试客户端收到指定消息类型。
-func expectClientMessageType(t *testing.T, ctx context.Context, messages <-chan media.Message, want string) {
+func expectClientMessageType(t *testing.T, ctx context.Context, messages <-chan connector.Message, want string) {
 	t.Helper()
 	select {
 	case msg := <-messages:
