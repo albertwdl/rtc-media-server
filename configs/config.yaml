@@ -1,0 +1,75 @@
+# HTTP服务配置
+server:
+  port: 8161
+  host: "0.0.0.0"
+
+# 日志配置
+log:
+  level: "debug"
+  format: "text"
+  file: "logs/rtc-media-server.log"
+
+# 信令服务配置
+signaling:
+  url: "http://10.85.216.139:18084"
+  reconnection_attempts: 5
+  reconnection_interval_ms: 3000
+
+# WebRTC 配置
+webrtc:
+  enabled: false
+  room_id: "005"
+  token: "12345"
+  port_min: 10000
+  port_max: 11000
+
+# TLS加密
+tls:
+  enabled: true
+  cert_file: "certs/server.crt"
+  key_file: "certs/server.key"
+  client_ca_file: "certs/ca.crt"
+
+# Agent 配置
+agent:
+  protocol: "wss"
+  host: "localhost"
+  port: 8160
+  path: "/v1/ai-edge-agent/omni/session"
+  # 用于测试场景下关闭服务端证书校验，生产环境需关闭
+  skip_verify: true
+  # 用于信任服务端证书
+  ca_cert_file: ""
+  # 加密套件，与go中tls定义一致
+  cipher_suites: "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+  min_version: ""
+  image_timeout: 10
+  tts_sample_rate: 24000
+
+# Websocket串流配置
+websocket:
+  listen: "0.0.0.0"
+  port: 8443
+  stream_path: "/v1/realtime"
+  client_id_header: "X-Hardware-Id"
+  tls:
+    cert_file: "configs/certs/dev-server.crt"
+    key_file: "configs/certs/dev-server.key"
+  rtt_interval: "10s"
+  read_timeout: "30s"
+  write_timeout: "10s"
+  max_message_bytes: 1048576
+  stream:
+    sample_rate: 8000
+    channels: 1
+
+# Session配置
+session:
+  close_timeout: "3s"
+  idle_timeout: "0s"
+
+# Controller配置
+controller:
+  initial_silence_timeout: "15s"
+  silence_timeout: "5s"
+  reference_queue_size: 16

@@ -17,16 +17,16 @@ import (
 	"syscall"
 	"time"
 
+	"rtc-media-server/internal/config"
 	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/log"
 	"rtc-media-server/internal/media"
-	"rtc-media-server/internal/pipeline"
 	"rtc-media-server/internal/session"
 	"rtc-media-server/internal/websocket"
 )
 
 const (
-	configPath = "configs/websocket.yaml"
+	configPath = "configs/config.yaml"
 
 	demoRSAKeyBits     = 2048
 	demoCertValidDays  = 365
@@ -43,23 +43,18 @@ const (
 
 // main 组装 demo 运行所需的配置、SessionManager 和 WebSocket 服务。
 func main() {
-	cfg, err := websocket.LoadConfig(configPath)
+	appCfg, err := config.Load(configPath)
 	if err != nil {
 		fatal("load config failed", err)
 	}
 
-	if err := ensureDemoCertificate(cfg.TLS.CertFile, cfg.TLS.KeyFile); err != nil {
+	if err := ensureDemoCertificate(appCfg.WebSocket.TLS.CertFile, appCfg.WebSocket.TLS.KeyFile); err != nil {
 		fatal("prepare local WSS certificate failed", err)
 	}
 
-	sessionManager := session.NewManager(session.Config{
-		UplinkQueueSize:   pipeline.DefaultQueueSize,
-		DownlinkQueueSize: pipeline.DefaultQueueSize,
-		CloseTimeout:      session.DefaultCloseTimeout,
-		TargetFormat:      media.DefaultPCM16Format(),
-	})
+	sessionManager := session.NewManager(session.ConfigFromAppConfig(*appCfg))
 
-	server, err := websocket.NewServer(cfg, websocket.Callbacks{
+	server, err := websocket.NewServer(websocket.Callbacks{
 		OnConnect: func(ctx context.Context, client connector.ClientConnector) error {
 			_, _, err := sessionManager.Attach(ctx, client)
 			return err
@@ -92,8 +87,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	addr := net.JoinHostPort(cfg.Listen, strconv.Itoa(cfg.Port))
-	log.Infof("rtc-media-server demo started realtime_addr=wss://%s%s", addr, cfg.StreamPath)
+	addr := net.JoinHostPort(appCfg.WebSocket.Listen, strconv.Itoa(appCfg.WebSocket.Port))
+	log.Infof("rtc-media-server demo started realtime_addr=wss://%s%s", addr, appCfg.WebSocket.StreamPath)
 	if err := server.Start(ctx); err != nil {
 		fatal("WebSocket server exited", err)
 	}

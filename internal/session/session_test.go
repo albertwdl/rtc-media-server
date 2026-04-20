@@ -6,10 +6,37 @@ import (
 	"testing"
 	"time"
 
+	"rtc-media-server/internal/config"
 	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/controller"
 	"rtc-media-server/internal/media"
 )
+
+// TestConfigFromAppConfig 验证应用配置会转换为 Session 运行配置。
+func TestConfigFromAppConfig(t *testing.T) {
+	appCfg := config.DefaultConfig()
+	appCfg.Session.CloseTimeout = config.Duration(4 * time.Second)
+	appCfg.Controller.InitialSilenceTimeout = config.Duration(11 * time.Second)
+	appCfg.Controller.SilenceTimeout = config.Duration(6 * time.Second)
+	appCfg.Controller.ReferenceQueueSize = 9
+
+	cfg := ConfigFromAppConfig(appCfg)
+	if cfg.CloseTimeout != 4*time.Second {
+		t.Fatalf("CloseTimeout = %s", cfg.CloseTimeout)
+	}
+	if cfg.Controller.InitialSilenceTimeout != 11*time.Second {
+		t.Fatalf("InitialSilenceTimeout = %s", cfg.Controller.InitialSilenceTimeout)
+	}
+	if cfg.Controller.SilenceTimeout != 6*time.Second {
+		t.Fatalf("SilenceTimeout = %s", cfg.Controller.SilenceTimeout)
+	}
+	if cfg.Controller.ReferenceQueueSize != 9 {
+		t.Fatalf("ReferenceQueueSize = %d", cfg.Controller.ReferenceQueueSize)
+	}
+	if cfg.UplinkQueueSize != 0 || cfg.DownlinkQueueSize != 0 || cfg.TargetFormat.Kind != "" {
+		t.Fatalf("pipeline defaults should remain normalized by session: %+v", cfg)
+	}
+}
 
 // TestNewSessionCreatesFixedComponents 验证 NewSession 会创建并启动固定链路组件。
 func TestNewSessionCreatesFixedComponents(t *testing.T) {

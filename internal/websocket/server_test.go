@@ -23,6 +23,7 @@ import (
 
 	coderws "github.com/coder/websocket"
 
+	"rtc-media-server/internal/config"
 	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/media"
 	"rtc-media-server/internal/session"
@@ -224,7 +225,7 @@ func TestRealtimeRouteAcceptsAuthHeaders(t *testing.T) {
 	headers.Set("X-Instance-Id", "instance-test")
 	headers.Set("X-Signature", "invalid-signature-is-accepted")
 	headers.Set("X-Hardware-Id", "hardware-realtime")
-	conn, _, err := coderws.Dial(ctx, url+DefaultStreamPath+"?bot=bot-test&wait_for_session_update=true", &coderws.DialOptions{
+	conn, _, err := coderws.Dial(ctx, url+config.DefaultStreamPath+"?bot=bot-test&wait_for_session_update=true", &coderws.DialOptions{
 		HTTPClient: client,
 		HTTPHeader: headers,
 	})
@@ -412,7 +413,7 @@ func TestLegacyStreamRouteRejected(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	headers := http.Header{}
-	headers.Set(DefaultClientIDHeader, "client-legacy")
+	headers.Set(config.DefaultClientIDHeader, "client-legacy")
 	_, resp, err := coderws.Dial(ctx, url+"/v1/stream", &coderws.DialOptions{
 		HTTPClient: client,
 		HTTPHeader: headers,
@@ -435,7 +436,7 @@ func TestDuplicateChannelRejected(t *testing.T) {
 	defer first.Close(coderws.StatusNormalClosure, "test done")
 
 	headers := http.Header{}
-	headers.Set(DefaultClientIDHeader, "client-f")
+	headers.Set(config.DefaultClientIDHeader, "client-f")
 	_, resp, err := coderws.Dial(ctx, url+"/v1/realtime", &coderws.DialOptions{
 		HTTPClient: client,
 		HTTPHeader: headers,
@@ -451,9 +452,9 @@ func TestDuplicateChannelRejected(t *testing.T) {
 // TestBackgroundRTTUpdatesSession 验证后台 RTT loop 会更新 Session 缓存。
 func TestBackgroundRTTUpdatesSession(t *testing.T) {
 	sessionCh := make(chan *session.Session, 1)
-	server, url, _ := newTestTLSServerWithConfig(t, func(cfg *Config) {
-		cfg.RTTInterval = 20 * time.Millisecond
-		cfg.WriteTimeout = time.Second
+	server, url, _ := newTestTLSServerWithConfig(t, func(cfg *config.WebSocketConfig) {
+		cfg.RTTInterval = config.Duration(20 * time.Millisecond)
+		cfg.WriteTimeout = config.Duration(time.Second)
 	}, func(sess *session.Session) {
 		sessionCh <- sess
 	})
@@ -568,12 +569,12 @@ func newTestTLSServer(t *testing.T, onSession func(*session.Session), callbackOp
 }
 
 // newTestTLSServerWithConfig 创建可覆盖 WebSocket 配置的测试服务。
-func newTestTLSServerWithConfig(t *testing.T, configure func(*Config), onSession func(*session.Session), callbackOpts ...func(*Callbacks)) (*Server, string, *http.Client) {
+func newTestTLSServerWithConfig(t *testing.T, configure func(*config.WebSocketConfig), onSession func(*session.Session), callbackOpts ...func(*Callbacks)) (*Server, string, *http.Client) {
 	t.Helper()
 
 	dir := t.TempDir()
 	cert, key := writeSelfSignedCert(t, dir)
-	cfg := DefaultConfig()
+	cfg := config.DefaultWebSocketConfig()
 	cfg.TLS.CertFile = cert
 	cfg.TLS.KeyFile = key
 	if configure != nil {
@@ -614,7 +615,7 @@ func newTestTLSServerWithConfig(t *testing.T, configure func(*Config), onSession
 	for _, opt := range callbackOpts {
 		opt(&callbacks)
 	}
-	server, err := NewServer(cfg, callbacks)
+	server, err := NewServerWithConfig(cfg, callbacks)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -672,15 +673,15 @@ func readEventPayload(t *testing.T, ctx context.Context, conn *coderws.Conn) str
 }
 
 // newBareTestTLSServer 创建不带 SessionManager 的 WebSocket 测试服务。
-func newBareTestTLSServer(t *testing.T, callbacks Callbacks) (Config, string, *http.Client) {
+func newBareTestTLSServer(t *testing.T, callbacks Callbacks) (config.WebSocketConfig, string, *http.Client) {
 	t.Helper()
 
 	dir := t.TempDir()
 	cert, key := writeSelfSignedCert(t, dir)
-	cfg := DefaultConfig()
+	cfg := config.DefaultWebSocketConfig()
 	cfg.TLS.CertFile = cert
 	cfg.TLS.KeyFile = key
-	server, err := NewServer(cfg, callbacks)
+	server, err := NewServerWithConfig(cfg, callbacks)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -752,7 +753,7 @@ func dialTestWS(t *testing.T, ctx context.Context, url string, clientID string) 
 	t.Helper()
 
 	headers := http.Header{}
-	headers.Set(DefaultClientIDHeader, clientID)
+	headers.Set(config.DefaultClientIDHeader, clientID)
 	conn, _, err := coderws.Dial(ctx, url, &coderws.DialOptions{
 		HTTPClient: &http.Client{
 			Transport: &http.Transport{

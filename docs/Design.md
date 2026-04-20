@@ -265,9 +265,9 @@ downlink:
 
 ## 配置说明
 
-`configs/websocket.yaml` 中的 `pipeline.uplink/downlink.stages` 当前只作为固定链路说明，不驱动运行时代码动态构建 stage。
+外部配置文件为 `configs/config.yaml`。当前运行时 stage chain 在 `Session` 创建时固定组装，不通过外部配置动态构建 pipeline。
 
-当前运行时 stage chain 在 `Session` 创建时固定组装。后续如果确实需要配置化 stage chain，应重新设计最小构建逻辑，不提前恢复未使用的 registry。
+后续如果确实需要配置化 stage chain，应重新设计最小构建逻辑，不提前恢复未使用的 registry。
 
 `StreamPath` 字段名仍保留在代码配置结构中，但默认值和实际语义是 realtime WebSocket 通道，即 `/v1/realtime`。
 

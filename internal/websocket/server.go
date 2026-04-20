@@ -13,6 +13,7 @@ import (
 
 	coderws "github.com/coder/websocket"
 
+	"rtc-media-server/internal/config"
 	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/log"
 	"rtc-media-server/internal/media"
@@ -38,7 +39,7 @@ const (
 
 // Server 是全局 WebSocket 监听器，负责 WSS 接入并创建每个客户端的 Connector。
 type Server struct {
-	cfg       Config
+	cfg       config.WebSocketConfig
 	callbacks Callbacks
 	httpSrv   *http.Server
 	clients   map[string]*clientConnector
@@ -85,12 +86,18 @@ type streamEvent struct {
 	Raw     []byte          `json:"-"`
 }
 
-// NewServer 创建全局 WebSocket 监听器。
-func NewServer(cfg Config, callbacks Callbacks) (*Server, error) {
-	if err := validateConfig(cfg); err != nil {
+// NewServer 使用进程配置单例创建全局 WebSocket 监听器。
+func NewServer(callbacks Callbacks) (*Server, error) {
+	cfg := config.Get().WebSocket
+	return NewServerWithConfig(cfg, callbacks)
+}
+
+// NewServerWithConfig 使用显式配置创建全局 WebSocket 监听器，主要供测试使用。
+func NewServerWithConfig(cfg config.WebSocketConfig, callbacks Callbacks) (*Server, error) {
+	if err := config.ValidateWebSocketConfig(cfg); err != nil {
 		return nil, err
 	}
-	if err := validateTLSFiles(cfg); err != nil {
+	if err := config.ValidateWebSocketTLSFiles(cfg); err != nil {
 		return nil, err
 	}
 
@@ -106,7 +113,7 @@ func NewServer(cfg Config, callbacks Callbacks) (*Server, error) {
 	s.httpSrv = &http.Server{
 		Addr:              net.JoinHostPort(cfg.Listen, fmt.Sprintf("%d", cfg.Port)),
 		Handler:           mux,
-		ReadHeaderTimeout: cfg.ReadTimeout,
+		ReadHeaderTimeout: cfg.ReadTimeout.Duration(),
 	}
 
 	return s, nil
@@ -139,7 +146,7 @@ func (s *Server) Start(ctx context.Context) error {
 	go s.rttLoop(runCtx)
 	go func() {
 		<-runCtx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.WriteTimeout)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.WriteTimeout.Duration())
 		defer cancel()
 		_ = s.Shutdown(shutdownCtx)
 	}()
@@ -232,7 +239,7 @@ func (s *Server) readStream(ctx context.Context, client *clientConnector, ch *ch
 	}()
 
 	for {
-		readCtx, cancel := context.WithTimeout(ctx, s.cfg.ReadTimeout)
+		readCtx, cancel := context.WithTimeout(ctx, s.cfg.ReadTimeout.Duration())
 		msgType, payload, err := ch.conn.Read(readCtx)
 		cancel()
 		if err != nil {
@@ -435,7 +442,7 @@ func (s *Server) snapshotClients() []*clientConnector {
 
 // rttLoop 按配置周期测量所有在线 stream 连接的 RTT。
 func (s *Server) rttLoop(ctx context.Context) {
-	ticker := time.NewTicker(s.cfg.RTTInterval)
+	ticker := time.NewTicker(s.cfg.RTTInterval.Duration())
 	defer ticker.Stop()
 
 	for {
@@ -447,7 +454,7 @@ func (s *Server) rttLoop(ctx context.Context) {
 				if client.streamConn() == nil {
 					continue
 				}
-				pingCtx, cancel := context.WithTimeout(ctx, s.cfg.WriteTimeout)
+				pingCtx, cancel := context.WithTimeout(ctx, s.cfg.WriteTimeout.Duration())
 				rtt, err := client.MeasureRTT(pingCtx)
 				cancel()
 				if err != nil {
@@ -559,7 +566,7 @@ func (client *clientConnector) Done() <-chan struct{} {
 
 // write 串行写入指定 WebSocket channel，避免并发写破坏连接状态。
 func (s *Server) write(ctx context.Context, ch *channelConn, msgType coderws.MessageType, payload []byte) error {
-	writeCtx, cancel := context.WithTimeout(ctx, s.cfg.WriteTimeout)
+	writeCtx, cancel := context.WithTimeout(ctx, s.cfg.WriteTimeout.Duration())
 	defer cancel()
 
 	ch.writeMu.Lock()

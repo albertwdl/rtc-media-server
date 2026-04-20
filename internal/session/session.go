@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"rtc-media-server/internal/application"
+	"rtc-media-server/internal/config"
 	"rtc-media-server/internal/connector"
 	"rtc-media-server/internal/controller"
 	"rtc-media-server/internal/log"
@@ -61,6 +62,18 @@ type Session struct {
 	ok  bool
 
 	responseActive bool
+}
+
+// ConfigFromAppConfig 将应用配置转换为 Session 运行配置。
+func ConfigFromAppConfig(cfg config.Config) Config {
+	return Config{
+		CloseTimeout: cfg.Session.CloseTimeout.Duration(),
+		Controller: controller.Config{
+			InitialSilenceTimeout: cfg.Controller.InitialSilenceTimeout.Duration(),
+			SilenceTimeout:        cfg.Controller.SilenceTimeout.Duration(),
+			ReferenceQueueSize:    cfg.Controller.ReferenceQueueSize,
+		},
+	}
 }
 
 // NewManager 创建业务 Session 管理器。
