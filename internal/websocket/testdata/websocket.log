@@ -1,0 +1,465 @@
+time=2026-04-25T11:23:03.585+08:00 level=DEBUG msg="client_id=client-a websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:03.585+08:00 level=INFO msg="client_id=client-a session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T11:23:03.585+08:00 level=DEBUG msg="client_id=client-a websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:03.585+08:00 level=INFO msg="client_id=client-a websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T11:23:03.585+08:00 level=DEBUG msg="client_id=client-a websocket received json={\"event_id\":\"append-test\",\"type\":\"input_audio_buffer.append\",\"audio\":\"1VU=\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T11:23:03.585+08:00 level=INFO msg="client_id=client-a connector event event_type=input_audio_buffer.append bytes=76" caller=internal/session/session.go:359
+time=2026-04-25T11:23:03.586+08:00 level=INFO msg="client_id=client-a audio enhancement processed direction=uplink codec=pcm16le bytes=4 rtt_ms= file=runtime/pcm/client-a.pcm" caller=internal/pipeline/stages/audioenhancement/mock.go:72
+time=2026-04-25T11:23:03.586+08:00 level=INFO msg="client_id=client-a vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=4" caller=internal/pipeline/stages/vad/mock.go:53
+time=2026-04-25T11:23:03.586+08:00 level=INFO msg="client_id=client-a controller event event_type=speech_started direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T11:23:03.586+08:00 level=DEBUG msg="client_id=client-a websocket sending json={\"type\":\"input_audio_buffer.speech_started\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:03.586+08:00 level=INFO msg="client_id=client-a controller event event_type=speech_stopped direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T11:23:03.586+08:00 level=DEBUG msg="client_id=client-a websocket sending json={\"type\":\"input_audio_buffer.speech_stopped\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:03.586+08:00 level=DEBUG msg="client_id=client-a websocket sending json={\"type\":\"input_audio_buffer.committed\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:03.586+08:00 level=INFO msg="client_id=client-a service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T11:23:03.586+08:00 level=INFO msg="client_id=client-a service connector received frame protocol=mock_service direction=uplink codec=pcm16le bytes=4" caller=internal/application/mock.go:67
+time=2026-04-25T11:23:03.597+08:00 level=INFO msg="client_id=client-a session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:03.744+08:00 level=DEBUG msg="client_id=client-b websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:03.744+08:00 level=INFO msg="client_id=client-b session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T11:23:03.744+08:00 level=DEBUG msg="client_id=client-b websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:03.744+08:00 level=INFO msg="client_id=client-b websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T11:23:03.744+08:00 level=DEBUG msg="client_id=client-b websocket received json={\"type\":\"input_audio_buffer.commit\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T11:23:03.744+08:00 level=INFO msg="client_id=client-b websocket stream event received event_type=input_audio_buffer.commit event_id=" caller=internal/websocket/server.go:330
+time=2026-04-25T11:23:03.744+08:00 level=DEBUG msg="client_id=client-b websocket sending json={\"type\":\"input_audio_buffer.committed\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:03.744+08:00 level=INFO msg="client_id=client-b service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T11:23:03.795+08:00 level=DEBUG msg="client_id=client-b websocket sending json={\"type\":\"response.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:03.795+08:00 level=DEBUG msg="client_id=client-b websocket sending json={\"type\":\"response.audio_transcript.delta\",\"delta\":\"ok\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:03.845+08:00 level=INFO msg="client_id=client-b session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:03.956+08:00 level=DEBUG msg="client_id=client-c websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:03.956+08:00 level=INFO msg="client_id=client-c session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T11:23:03.956+08:00 level=DEBUG msg="client_id=client-c websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:03.956+08:00 level=INFO msg="client_id=client-c websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T11:23:03.956+08:00 level=DEBUG msg="client_id=client-c websocket received json=not-json" caller=internal/websocket/server.go:258
+time=2026-04-25T11:23:03.956+08:00 level=ERROR msg="client_id=client-c session error: parse stream event: invalid character 'o' in literal null (expecting 'u')" caller=internal/session/session.go:482
+time=2026-04-25T11:23:03.956+08:00 level=DEBUG msg="client_id=client-c websocket sending json={\"type\":\"error\",\"message\":\"invalid json: invalid character 'o' in literal null (expecting 'u')\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:04.057+08:00 level=DEBUG msg="client_id=client-c websocket received json={\"event_id\":\"append-test\",\"type\":\"input_audio_buffer.append\",\"audio\":\"1Q==\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T11:23:04.057+08:00 level=INFO msg="client_id=client-c connector event event_type=input_audio_buffer.append bytes=76" caller=internal/session/session.go:359
+time=2026-04-25T11:23:04.058+08:00 level=INFO msg="client_id=client-c audio enhancement processed direction=uplink codec=pcm16le bytes=2 rtt_ms= file=runtime/pcm/client-c.pcm" caller=internal/pipeline/stages/audioenhancement/mock.go:72
+time=2026-04-25T11:23:04.058+08:00 level=INFO msg="client_id=client-c vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=2" caller=internal/pipeline/stages/vad/mock.go:53
+time=2026-04-25T11:23:04.058+08:00 level=INFO msg="client_id=client-c controller event event_type=speech_started direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T11:23:04.058+08:00 level=DEBUG msg="client_id=client-c websocket sending json={\"type\":\"input_audio_buffer.speech_started\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:04.058+08:00 level=INFO msg="client_id=client-c controller event event_type=speech_stopped direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T11:23:04.058+08:00 level=DEBUG msg="client_id=client-c websocket sending json={\"type\":\"input_audio_buffer.speech_stopped\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:04.058+08:00 level=DEBUG msg="client_id=client-c websocket sending json={\"type\":\"input_audio_buffer.committed\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:04.058+08:00 level=INFO msg="client_id=client-c service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T11:23:04.058+08:00 level=INFO msg="client_id=client-c service connector received frame protocol=mock_service direction=uplink codec=pcm16le bytes=2" caller=internal/application/mock.go:67
+time=2026-04-25T11:23:04.068+08:00 level=INFO msg="client_id=client-c session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:04.179+08:00 level=DEBUG msg="client_id=client-cancel websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:04.179+08:00 level=INFO msg="client_id=client-cancel session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T11:23:04.179+08:00 level=DEBUG msg="client_id=client-cancel websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:04.179+08:00 level=INFO msg="client_id=client-cancel websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T11:23:04.179+08:00 level=DEBUG msg="client_id=client-cancel websocket received json={\"event_id\":\"cancel-1\",\"type\":\"response.cancel\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T11:23:04.179+08:00 level=INFO msg="client_id=client-cancel websocket stream event received event_type=response.cancel event_id=cancel-1" caller=internal/websocket/server.go:344
+time=2026-04-25T11:23:04.179+08:00 level=INFO msg="client_id=client-cancel connector event event_type=response.cancel bytes=48" caller=internal/session/session.go:359
+time=2026-04-25T11:23:04.179+08:00 level=INFO msg="client_id=client-cancel service connector received message protocol=mock_service direction=uplink type=response_cancel bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T11:23:04.179+08:00 level=DEBUG msg="client_id=client-cancel websocket sending json={\"type\":\"response.done\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:04.179+08:00 level=INFO msg="client_id=client-cancel session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:04.345+08:00 level=DEBUG msg="client_id=client-speech websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:04.345+08:00 level=INFO msg="client_id=client-speech session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T11:23:04.345+08:00 level=DEBUG msg="client_id=client-speech websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:04.345+08:00 level=INFO msg="client_id=client-speech websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T11:23:04.345+08:00 level=DEBUG msg="client_id=client-speech websocket received json={\"event_id\":\"append-test\",\"type\":\"input_audio_buffer.append\",\"audio\":\"1VU=\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T11:23:04.345+08:00 level=INFO msg="client_id=client-speech connector event event_type=input_audio_buffer.append bytes=76" caller=internal/session/session.go:359
+time=2026-04-25T11:23:04.346+08:00 level=INFO msg="client_id=client-speech audio enhancement processed direction=uplink codec=pcm16le bytes=4 rtt_ms= file=runtime/pcm/client-speech.pcm" caller=internal/pipeline/stages/audioenhancement/mock.go:72
+time=2026-04-25T11:23:04.346+08:00 level=INFO msg="client_id=client-speech vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=4" caller=internal/pipeline/stages/vad/mock.go:53
+time=2026-04-25T11:23:04.346+08:00 level=INFO msg="client_id=client-speech controller event event_type=speech_started direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T11:23:04.346+08:00 level=DEBUG msg="client_id=client-speech websocket sending json={\"type\":\"input_audio_buffer.speech_started\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:04.346+08:00 level=INFO msg="client_id=client-speech controller event event_type=speech_stopped direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T11:23:04.346+08:00 level=DEBUG msg="client_id=client-speech websocket sending json={\"type\":\"input_audio_buffer.speech_stopped\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:04.346+08:00 level=DEBUG msg="client_id=client-speech websocket sending json={\"type\":\"input_audio_buffer.committed\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:04.346+08:00 level=INFO msg="client_id=client-speech service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T11:23:04.346+08:00 level=INFO msg="client_id=client-speech service connector received frame protocol=mock_service direction=uplink codec=pcm16le bytes=4" caller=internal/application/mock.go:67
+time=2026-04-25T11:23:04.357+08:00 level=INFO msg="client_id=client-speech session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:04.378+08:00 level=DEBUG msg="client_id=client-control websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:04.378+08:00 level=INFO msg="client_id=client-control session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T11:23:04.378+08:00 level=DEBUG msg="client_id=client-control websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:04.378+08:00 level=INFO msg="client_id=client-control websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T11:23:04.379+08:00 level=DEBUG msg="client_id=client-control websocket received json={\"event_id\":\"commit-1\",\"type\":\"input_audio_buffer.commit\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T11:23:04.379+08:00 level=INFO msg="client_id=client-control websocket stream event received event_type=input_audio_buffer.commit event_id=commit-1" caller=internal/websocket/server.go:330
+time=2026-04-25T11:23:04.379+08:00 level=DEBUG msg="client_id=client-control websocket sending json={\"type\":\"input_audio_buffer.committed\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:04.379+08:00 level=INFO msg="client_id=client-control service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T11:23:04.379+08:00 level=DEBUG msg="client_id=client-control websocket received json={\"event_id\":\"cancel-1\",\"type\":\"response.cancel\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T11:23:04.379+08:00 level=INFO msg="client_id=client-control websocket stream event received event_type=response.cancel event_id=cancel-1" caller=internal/websocket/server.go:344
+time=2026-04-25T11:23:04.379+08:00 level=INFO msg="client_id=client-control service connector received message protocol=mock_service direction=uplink type=response_cancel bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T11:23:04.379+08:00 level=DEBUG msg="client_id=client-control websocket sending json={\"type\":\"response.done\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:04.379+08:00 level=DEBUG msg="client_id=client-control websocket received json={\"event_id\":\"session-1\",\"type\":\"session.update\",\"session\":{\"object\":\"realtime.session\",\"input_audio_format\":\"g711_alaw\",\"output_audio_format\":\"g711_alaw\"}}" caller=internal/websocket/server.go:258
+time=2026-04-25T11:23:04.379+08:00 level=INFO msg="client_id=client-control websocket stream event received event_type=session.update event_id=session-1" caller=internal/websocket/server.go:351
+time=2026-04-25T11:23:04.379+08:00 level=DEBUG msg="client_id=client-control websocket sending json={\"type\":\"session.updated\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:04.480+08:00 level=INFO msg="client_id=client-control session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:05.165+08:00 level=DEBUG msg="client_id=hardware-realtime websocket handshake path=/v1/realtime raw_query=bot=bot-test&wait_for_session_update=true auth_type=1 device_name=device-test instance_id=instance-test signature_present=true" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:05.165+08:00 level=INFO msg="client_id=hardware-realtime session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T11:23:05.165+08:00 level=DEBUG msg="client_id=hardware-realtime websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:05.165+08:00 level=INFO msg="client_id=hardware-realtime websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T11:23:05.165+08:00 level=INFO msg="client_id=hardware-realtime session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:05.310+08:00 level=DEBUG msg="client_id=client-ack websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:05.310+08:00 level=INFO msg="client_id=client-ack session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T11:23:05.310+08:00 level=DEBUG msg="client_id=client-ack websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:05.310+08:00 level=INFO msg="client_id=client-ack websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T11:23:05.310+08:00 level=DEBUG msg="client_id=client-ack websocket received json={\"event_id\":\"session-ack\",\"type\":\"session.update\",\"session\":{\"object\":\"realtime.session\",\"input_audio_format\":\"g711_alaw\",\"output_audio_format\":\"g711_alaw\"}}" caller=internal/websocket/server.go:258
+time=2026-04-25T11:23:05.310+08:00 level=INFO msg="client_id=client-ack websocket stream event received event_type=session.update event_id=session-ack" caller=internal/websocket/server.go:351
+time=2026-04-25T11:23:05.310+08:00 level=INFO msg="client_id=client-ack connector event event_type=session.update bytes=157" caller=internal/session/session.go:359
+time=2026-04-25T11:23:05.310+08:00 level=DEBUG msg="client_id=client-ack websocket sending json={\"type\":\"session.updated\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:05.310+08:00 level=DEBUG msg="client_id=client-ack websocket received json={\"event_id\":\"commit-ack\",\"type\":\"input_audio_buffer.commit\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T11:23:05.310+08:00 level=INFO msg="client_id=client-ack websocket stream event received event_type=input_audio_buffer.commit event_id=commit-ack" caller=internal/websocket/server.go:330
+time=2026-04-25T11:23:05.310+08:00 level=INFO msg="client_id=client-ack connector event event_type=input_audio_buffer.commit bytes=60" caller=internal/session/session.go:359
+time=2026-04-25T11:23:05.310+08:00 level=DEBUG msg="client_id=client-ack websocket sending json={\"type\":\"input_audio_buffer.committed\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:05.310+08:00 level=INFO msg="client_id=client-ack service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T11:23:05.310+08:00 level=INFO msg="client_id=client-ack session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:05.525+08:00 level=DEBUG msg="client_id=client-response websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:05.525+08:00 level=INFO msg="client_id=client-response session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T11:23:05.525+08:00 level=DEBUG msg="client_id=client-response websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:05.525+08:00 level=INFO msg="client_id=client-response websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T11:23:05.525+08:00 level=DEBUG msg="client_id=client-response websocket received json={\"event_id\":\"create-1\",\"type\":\"response.create\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T11:23:05.525+08:00 level=INFO msg="client_id=client-response websocket stream event received event_type=response.create event_id=create-1" caller=internal/websocket/server.go:337
+time=2026-04-25T11:23:05.525+08:00 level=INFO msg="client_id=client-response connector event event_type=response.create bytes=48" caller=internal/session/session.go:359
+time=2026-04-25T11:23:05.525+08:00 level=INFO msg="client_id=client-response service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T11:23:05.576+08:00 level=DEBUG msg="client_id=client-response websocket sending json={\"type\":\"response.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:05.576+08:00 level=DEBUG msg="client_id=client-response websocket sending json={\"type\":\"response.audio_transcript.delta\",\"delta\":\"ok\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:05.627+08:00 level=INFO msg="client_id=client-response audio enhancement reference received direction=downlink codec=pcm16le bytes=320" caller=internal/pipeline/stages/audioenhancement/mock.go:56
+time=2026-04-25T11:23:05.627+08:00 level=DEBUG msg="client_id=client-response websocket sending json={\"type\":\"response.audio.delta\",\"delta\":\"1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1Q==\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:05.678+08:00 level=DEBUG msg="client_id=client-response websocket sending json={\"type\":\"response.done\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:05.678+08:00 level=INFO msg="client_id=client-response session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:05.762+08:00 level=DEBUG msg="client_id=client-d websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:05.762+08:00 level=INFO msg="client_id=client-d session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T11:23:05.762+08:00 level=DEBUG msg="client_id=client-d websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:05.762+08:00 level=INFO msg="client_id=client-d websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T11:23:05.762+08:00 level=DEBUG msg="client_id=client-d websocket sending json={\"type\":\"response.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:05.762+08:00 level=INFO msg="client_id=client-d audio enhancement reference received direction=downlink codec=pcm16le bytes=4" caller=internal/pipeline/stages/audioenhancement/mock.go:56
+time=2026-04-25T11:23:05.762+08:00 level=DEBUG msg="client_id=client-d websocket sending json={\"type\":\"response.audio.delta\",\"delta\":\"1Zc=\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:05.763+08:00 level=INFO msg="client_id=client-d session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:05.833+08:00 level=DEBUG msg="client_id=client-text websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:05.833+08:00 level=INFO msg="client_id=client-text session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T11:23:05.833+08:00 level=DEBUG msg="client_id=client-text websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:05.833+08:00 level=INFO msg="client_id=client-text websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T11:23:05.833+08:00 level=DEBUG msg="client_id=client-text websocket sending json={\"type\":\"response.text.delta\",\"text\":\"hello\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:05.833+08:00 level=INFO msg="client_id=client-text session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:06.185+08:00 level=DEBUG msg="client_id=client-f websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:06.185+08:00 level=INFO msg="client_id=client-f session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T11:23:06.185+08:00 level=DEBUG msg="client_id=client-f websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:06.185+08:00 level=INFO msg="client_id=client-f websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T11:23:06.186+08:00 level=DEBUG msg="client_id=client-f websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:06.187+08:00 level=INFO msg="client_id=client-f session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:06.392+08:00 level=DEBUG msg="client_id=client-g websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:06.392+08:00 level=INFO msg="client_id=client-g session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T11:23:06.392+08:00 level=DEBUG msg="client_id=client-g websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:06.392+08:00 level=INFO msg="client_id=client-g websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T11:23:06.423+08:00 level=INFO msg="client_id=client-g session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:06.582+08:00 level=DEBUG msg="client_id=client-h websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:06.583+08:00 level=ERROR msg="client_id=client-h websocket connector error: attach failed" caller=internal/websocket/server.go:629
+time=2026-04-25T11:23:06.584+08:00 level=DEBUG msg="client_id=client-h websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:06.584+08:00 level=DEBUG msg="client_id=client-h websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:06.584+08:00 level=INFO msg="client_id=client-h websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T11:23:06.747+08:00 level=DEBUG msg="client_id=client-i websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T11:23:06.747+08:00 level=INFO msg="client_id=client-i session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T11:23:06.747+08:00 level=DEBUG msg="client_id=client-i websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T11:23:06.747+08:00 level=INFO msg="client_id=client-i websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:16.229+08:00 level=DEBUG msg="client_id=client-a websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:16.229+08:00 level=INFO msg="client_id=client-a session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T14:31:16.229+08:00 level=DEBUG msg="client_id=client-a websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.229+08:00 level=INFO msg="client_id=client-a websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:16.229+08:00 level=DEBUG msg="client_id=client-a websocket received json={\"event_id\":\"append-test\",\"type\":\"input_audio_buffer.append\",\"audio\":\"1VU=\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T14:31:16.229+08:00 level=INFO msg="client_id=client-a connector event event_type=input_audio_buffer.append bytes=76" caller=internal/session/session.go:359
+time=2026-04-25T14:31:16.230+08:00 level=INFO msg="client_id=client-a audio enhancement processed direction=uplink codec=pcm16le bytes=4 rtt_ms= file=runtime/pcm/client-a.pcm" caller=internal/pipeline/stages/audioenhancement/mock.go:72
+time=2026-04-25T14:31:16.230+08:00 level=INFO msg="client_id=client-a vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=4" caller=internal/pipeline/stages/vad/mock.go:53
+time=2026-04-25T14:31:16.230+08:00 level=INFO msg="client_id=client-a controller event event_type=speech_started direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T14:31:16.230+08:00 level=DEBUG msg="client_id=client-a websocket sending json={\"type\":\"input_audio_buffer.speech_started\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.230+08:00 level=INFO msg="client_id=client-a controller event event_type=speech_stopped direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T14:31:16.230+08:00 level=DEBUG msg="client_id=client-a websocket sending json={\"type\":\"input_audio_buffer.speech_stopped\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.230+08:00 level=DEBUG msg="client_id=client-a websocket sending json={\"type\":\"input_audio_buffer.committed\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.230+08:00 level=INFO msg="client_id=client-a service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T14:31:16.230+08:00 level=INFO msg="client_id=client-a service connector received frame protocol=mock_service direction=uplink codec=pcm16le bytes=4" caller=internal/application/mock.go:67
+time=2026-04-25T14:31:16.241+08:00 level=INFO msg="client_id=client-a session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:16.354+08:00 level=DEBUG msg="client_id=client-b websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:16.354+08:00 level=INFO msg="client_id=client-b session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T14:31:16.354+08:00 level=DEBUG msg="client_id=client-b websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.354+08:00 level=INFO msg="client_id=client-b websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:16.354+08:00 level=DEBUG msg="client_id=client-b websocket received json={\"type\":\"input_audio_buffer.commit\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T14:31:16.354+08:00 level=INFO msg="client_id=client-b websocket stream event received event_type=input_audio_buffer.commit event_id=" caller=internal/websocket/server.go:330
+time=2026-04-25T14:31:16.354+08:00 level=DEBUG msg="client_id=client-b websocket sending json={\"type\":\"input_audio_buffer.committed\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.354+08:00 level=INFO msg="client_id=client-b service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T14:31:16.405+08:00 level=DEBUG msg="client_id=client-b websocket sending json={\"type\":\"response.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.405+08:00 level=DEBUG msg="client_id=client-b websocket sending json={\"type\":\"response.audio_transcript.delta\",\"delta\":\"ok\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.455+08:00 level=INFO msg="client_id=client-b session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:16.731+08:00 level=DEBUG msg="client_id=client-c websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:16.731+08:00 level=INFO msg="client_id=client-c session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T14:31:16.731+08:00 level=DEBUG msg="client_id=client-c websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.731+08:00 level=INFO msg="client_id=client-c websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:16.731+08:00 level=DEBUG msg="client_id=client-c websocket received json=not-json" caller=internal/websocket/server.go:258
+time=2026-04-25T14:31:16.731+08:00 level=ERROR msg="client_id=client-c session error: parse stream event: invalid character 'o' in literal null (expecting 'u')" caller=internal/session/session.go:482
+time=2026-04-25T14:31:16.731+08:00 level=DEBUG msg="client_id=client-c websocket sending json={\"type\":\"error\",\"message\":\"invalid json: invalid character 'o' in literal null (expecting 'u')\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.832+08:00 level=DEBUG msg="client_id=client-c websocket received json={\"event_id\":\"append-test\",\"type\":\"input_audio_buffer.append\",\"audio\":\"1Q==\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T14:31:16.832+08:00 level=INFO msg="client_id=client-c connector event event_type=input_audio_buffer.append bytes=76" caller=internal/session/session.go:359
+time=2026-04-25T14:31:16.833+08:00 level=INFO msg="client_id=client-c audio enhancement processed direction=uplink codec=pcm16le bytes=2 rtt_ms= file=runtime/pcm/client-c.pcm" caller=internal/pipeline/stages/audioenhancement/mock.go:72
+time=2026-04-25T14:31:16.833+08:00 level=INFO msg="client_id=client-c vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=2" caller=internal/pipeline/stages/vad/mock.go:53
+time=2026-04-25T14:31:16.833+08:00 level=INFO msg="client_id=client-c controller event event_type=speech_started direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T14:31:16.833+08:00 level=DEBUG msg="client_id=client-c websocket sending json={\"type\":\"input_audio_buffer.speech_started\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.833+08:00 level=INFO msg="client_id=client-c controller event event_type=speech_stopped direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T14:31:16.833+08:00 level=DEBUG msg="client_id=client-c websocket sending json={\"type\":\"input_audio_buffer.speech_stopped\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.833+08:00 level=DEBUG msg="client_id=client-c websocket sending json={\"type\":\"input_audio_buffer.committed\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.833+08:00 level=INFO msg="client_id=client-c service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T14:31:16.834+08:00 level=INFO msg="client_id=client-c service connector received frame protocol=mock_service direction=uplink codec=pcm16le bytes=2" caller=internal/application/mock.go:67
+time=2026-04-25T14:31:16.844+08:00 level=INFO msg="client_id=client-c session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:16.979+08:00 level=DEBUG msg="client_id=client-cancel websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:16.979+08:00 level=INFO msg="client_id=client-cancel session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T14:31:16.979+08:00 level=DEBUG msg="client_id=client-cancel websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.979+08:00 level=INFO msg="client_id=client-cancel websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:16.980+08:00 level=DEBUG msg="client_id=client-cancel websocket received json={\"event_id\":\"cancel-1\",\"type\":\"response.cancel\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T14:31:16.980+08:00 level=INFO msg="client_id=client-cancel websocket stream event received event_type=response.cancel event_id=cancel-1" caller=internal/websocket/server.go:344
+time=2026-04-25T14:31:16.980+08:00 level=INFO msg="client_id=client-cancel connector event event_type=response.cancel bytes=48" caller=internal/session/session.go:359
+time=2026-04-25T14:31:16.980+08:00 level=INFO msg="client_id=client-cancel service connector received message protocol=mock_service direction=uplink type=response_cancel bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T14:31:16.980+08:00 level=DEBUG msg="client_id=client-cancel websocket sending json={\"type\":\"response.done\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:16.980+08:00 level=INFO msg="client_id=client-cancel session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:17.034+08:00 level=DEBUG msg="client_id=client-speech websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:17.034+08:00 level=INFO msg="client_id=client-speech session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T14:31:17.034+08:00 level=DEBUG msg="client_id=client-speech websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.034+08:00 level=INFO msg="client_id=client-speech websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:17.034+08:00 level=DEBUG msg="client_id=client-speech websocket received json={\"event_id\":\"append-test\",\"type\":\"input_audio_buffer.append\",\"audio\":\"1VU=\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T14:31:17.034+08:00 level=INFO msg="client_id=client-speech connector event event_type=input_audio_buffer.append bytes=76" caller=internal/session/session.go:359
+time=2026-04-25T14:31:17.034+08:00 level=INFO msg="client_id=client-speech audio enhancement processed direction=uplink codec=pcm16le bytes=4 rtt_ms= file=runtime/pcm/client-speech.pcm" caller=internal/pipeline/stages/audioenhancement/mock.go:72
+time=2026-04-25T14:31:17.034+08:00 level=INFO msg="client_id=client-speech vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=4" caller=internal/pipeline/stages/vad/mock.go:53
+time=2026-04-25T14:31:17.034+08:00 level=INFO msg="client_id=client-speech controller event event_type=speech_started direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T14:31:17.034+08:00 level=DEBUG msg="client_id=client-speech websocket sending json={\"type\":\"input_audio_buffer.speech_started\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.034+08:00 level=INFO msg="client_id=client-speech controller event event_type=speech_stopped direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T14:31:17.034+08:00 level=DEBUG msg="client_id=client-speech websocket sending json={\"type\":\"input_audio_buffer.speech_stopped\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.034+08:00 level=DEBUG msg="client_id=client-speech websocket sending json={\"type\":\"input_audio_buffer.committed\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.034+08:00 level=INFO msg="client_id=client-speech service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T14:31:17.034+08:00 level=INFO msg="client_id=client-speech service connector received frame protocol=mock_service direction=uplink codec=pcm16le bytes=4" caller=internal/application/mock.go:67
+time=2026-04-25T14:31:17.045+08:00 level=INFO msg="client_id=client-speech session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:17.213+08:00 level=DEBUG msg="client_id=client-control websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:17.214+08:00 level=INFO msg="client_id=client-control session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T14:31:17.214+08:00 level=DEBUG msg="client_id=client-control websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.214+08:00 level=INFO msg="client_id=client-control websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:17.214+08:00 level=DEBUG msg="client_id=client-control websocket received json={\"event_id\":\"commit-1\",\"type\":\"input_audio_buffer.commit\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T14:31:17.214+08:00 level=INFO msg="client_id=client-control websocket stream event received event_type=input_audio_buffer.commit event_id=commit-1" caller=internal/websocket/server.go:330
+time=2026-04-25T14:31:17.214+08:00 level=DEBUG msg="client_id=client-control websocket sending json={\"type\":\"input_audio_buffer.committed\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.214+08:00 level=INFO msg="client_id=client-control service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T14:31:17.214+08:00 level=DEBUG msg="client_id=client-control websocket received json={\"event_id\":\"cancel-1\",\"type\":\"response.cancel\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T14:31:17.214+08:00 level=INFO msg="client_id=client-control websocket stream event received event_type=response.cancel event_id=cancel-1" caller=internal/websocket/server.go:344
+time=2026-04-25T14:31:17.214+08:00 level=INFO msg="client_id=client-control service connector received message protocol=mock_service direction=uplink type=response_cancel bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T14:31:17.214+08:00 level=DEBUG msg="client_id=client-control websocket sending json={\"type\":\"response.done\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.214+08:00 level=DEBUG msg="client_id=client-control websocket received json={\"event_id\":\"session-1\",\"type\":\"session.update\",\"session\":{\"object\":\"realtime.session\",\"input_audio_format\":\"g711_alaw\",\"output_audio_format\":\"g711_alaw\"}}" caller=internal/websocket/server.go:258
+time=2026-04-25T14:31:17.214+08:00 level=INFO msg="client_id=client-control websocket stream event received event_type=session.update event_id=session-1" caller=internal/websocket/server.go:351
+time=2026-04-25T14:31:17.214+08:00 level=DEBUG msg="client_id=client-control websocket sending json={\"type\":\"session.updated\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.315+08:00 level=INFO msg="client_id=client-control session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:17.365+08:00 level=DEBUG msg="client_id=hardware-realtime websocket handshake path=/v1/realtime raw_query=bot=bot-test&wait_for_session_update=true auth_type=1 device_name=device-test instance_id=instance-test signature_present=true" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:17.365+08:00 level=INFO msg="client_id=hardware-realtime session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T14:31:17.365+08:00 level=DEBUG msg="client_id=hardware-realtime websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.365+08:00 level=INFO msg="client_id=hardware-realtime websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:17.365+08:00 level=INFO msg="client_id=hardware-realtime session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:17.463+08:00 level=DEBUG msg="client_id=client-ack websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:17.463+08:00 level=INFO msg="client_id=client-ack session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T14:31:17.463+08:00 level=DEBUG msg="client_id=client-ack websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.463+08:00 level=INFO msg="client_id=client-ack websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:17.463+08:00 level=DEBUG msg="client_id=client-ack websocket received json={\"event_id\":\"session-ack\",\"type\":\"session.update\",\"session\":{\"object\":\"realtime.session\",\"input_audio_format\":\"g711_alaw\",\"output_audio_format\":\"g711_alaw\"}}" caller=internal/websocket/server.go:258
+time=2026-04-25T14:31:17.463+08:00 level=INFO msg="client_id=client-ack websocket stream event received event_type=session.update event_id=session-ack" caller=internal/websocket/server.go:351
+time=2026-04-25T14:31:17.463+08:00 level=INFO msg="client_id=client-ack connector event event_type=session.update bytes=157" caller=internal/session/session.go:359
+time=2026-04-25T14:31:17.463+08:00 level=DEBUG msg="client_id=client-ack websocket sending json={\"type\":\"session.updated\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.463+08:00 level=DEBUG msg="client_id=client-ack websocket received json={\"event_id\":\"commit-ack\",\"type\":\"input_audio_buffer.commit\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T14:31:17.463+08:00 level=INFO msg="client_id=client-ack websocket stream event received event_type=input_audio_buffer.commit event_id=commit-ack" caller=internal/websocket/server.go:330
+time=2026-04-25T14:31:17.463+08:00 level=INFO msg="client_id=client-ack connector event event_type=input_audio_buffer.commit bytes=60" caller=internal/session/session.go:359
+time=2026-04-25T14:31:17.463+08:00 level=DEBUG msg="client_id=client-ack websocket sending json={\"type\":\"input_audio_buffer.committed\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.463+08:00 level=INFO msg="client_id=client-ack service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T14:31:17.463+08:00 level=INFO msg="client_id=client-ack session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:17.595+08:00 level=DEBUG msg="client_id=client-response websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:17.595+08:00 level=INFO msg="client_id=client-response session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T14:31:17.595+08:00 level=DEBUG msg="client_id=client-response websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.595+08:00 level=INFO msg="client_id=client-response websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:17.595+08:00 level=DEBUG msg="client_id=client-response websocket received json={\"event_id\":\"create-1\",\"type\":\"response.create\"}" caller=internal/websocket/server.go:258
+time=2026-04-25T14:31:17.595+08:00 level=INFO msg="client_id=client-response websocket stream event received event_type=response.create event_id=create-1" caller=internal/websocket/server.go:337
+time=2026-04-25T14:31:17.595+08:00 level=INFO msg="client_id=client-response connector event event_type=response.create bytes=48" caller=internal/session/session.go:359
+time=2026-04-25T14:31:17.595+08:00 level=INFO msg="client_id=client-response service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T14:31:17.646+08:00 level=DEBUG msg="client_id=client-response websocket sending json={\"type\":\"response.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.646+08:00 level=DEBUG msg="client_id=client-response websocket sending json={\"type\":\"response.audio_transcript.delta\",\"delta\":\"ok\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.697+08:00 level=INFO msg="client_id=client-response audio enhancement reference received direction=downlink codec=pcm16le bytes=320" caller=internal/pipeline/stages/audioenhancement/mock.go:56
+time=2026-04-25T14:31:17.697+08:00 level=DEBUG msg="client_id=client-response websocket sending json={\"type\":\"response.audio.delta\",\"delta\":\"1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1Q==\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.748+08:00 level=DEBUG msg="client_id=client-response websocket sending json={\"type\":\"response.done\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.748+08:00 level=INFO msg="client_id=client-response session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:17.900+08:00 level=DEBUG msg="client_id=client-d websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:17.900+08:00 level=INFO msg="client_id=client-d session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T14:31:17.900+08:00 level=DEBUG msg="client_id=client-d websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.900+08:00 level=INFO msg="client_id=client-d websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:17.900+08:00 level=DEBUG msg="client_id=client-d websocket sending json={\"type\":\"response.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.901+08:00 level=DEBUG msg="client_id=client-d websocket sending json={\"type\":\"response.audio.delta\",\"delta\":\"1Zc=\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:17.901+08:00 level=INFO msg="client_id=client-d audio enhancement reference received direction=downlink codec=pcm16le bytes=4" caller=internal/pipeline/stages/audioenhancement/mock.go:56
+time=2026-04-25T14:31:17.901+08:00 level=INFO msg="client_id=client-d session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:18.181+08:00 level=DEBUG msg="client_id=client-text websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:18.181+08:00 level=INFO msg="client_id=client-text session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T14:31:18.181+08:00 level=DEBUG msg="client_id=client-text websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:18.181+08:00 level=INFO msg="client_id=client-text websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:18.181+08:00 level=DEBUG msg="client_id=client-text websocket sending json={\"type\":\"response.text.delta\",\"text\":\"hello\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:18.182+08:00 level=INFO msg="client_id=client-text session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:18.571+08:00 level=DEBUG msg="client_id=client-f websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:18.571+08:00 level=INFO msg="client_id=client-f session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T14:31:18.571+08:00 level=DEBUG msg="client_id=client-f websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:18.571+08:00 level=INFO msg="client_id=client-f websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:18.572+08:00 level=DEBUG msg="client_id=client-f websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:18.572+08:00 level=INFO msg="client_id=client-f session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:18.799+08:00 level=DEBUG msg="client_id=client-g websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:18.799+08:00 level=INFO msg="client_id=client-g session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T14:31:18.799+08:00 level=DEBUG msg="client_id=client-g websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:18.799+08:00 level=INFO msg="client_id=client-g websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:18.830+08:00 level=INFO msg="client_id=client-g session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:18.867+08:00 level=DEBUG msg="client_id=client-h websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:18.867+08:00 level=ERROR msg="client_id=client-h websocket connector error: attach failed" caller=internal/websocket/server.go:629
+time=2026-04-25T14:31:18.868+08:00 level=DEBUG msg="client_id=client-h websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:18.868+08:00 level=DEBUG msg="client_id=client-h websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:18.868+08:00 level=INFO msg="client_id=client-h websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+time=2026-04-25T14:31:19.026+08:00 level=DEBUG msg="client_id=client-i websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false" caller=internal/websocket/server.go:185
+time=2026-04-25T14:31:19.026+08:00 level=INFO msg="client_id=client-i session created protocol=websocket" caller=internal/session/session.go:199
+time=2026-04-25T14:31:19.026+08:00 level=DEBUG msg="client_id=client-i websocket sending json={\"type\":\"session.created\"}" caller=internal/websocket/server.go:527
+time=2026-04-25T14:31:19.026+08:00 level=INFO msg="client_id=client-i websocket channel connected protocol=websocket channel=stream" caller=internal/websocket/server.go:228
+[2026-04-25T14:39:19.612+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-a websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:19.613+08:00] [INFO] [internal/session/session.go:199] client_id=client-a session created protocol=websocket
+[2026-04-25T14:39:19.613+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-a websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:19.613+08:00] [INFO] [internal/websocket/server.go:228] client_id=client-a websocket channel connected protocol=websocket channel=stream
+[2026-04-25T14:39:19.613+08:00] [DEBUG] [internal/websocket/server.go:258] client_id=client-a websocket received json={"event_id":"append-test","type":"input_audio_buffer.append","audio":"1VU="}
+[2026-04-25T14:39:19.613+08:00] [INFO] [internal/session/session.go:359] client_id=client-a connector event event_type=input_audio_buffer.append bytes=76
+[2026-04-25T14:39:19.613+08:00] [INFO] [internal/pipeline/stages/audioenhancement/mock.go:72] client_id=client-a audio enhancement processed direction=uplink codec=pcm16le bytes=4 rtt_ms= file=runtime/pcm/client-a.pcm
+[2026-04-25T14:39:19.613+08:00] [INFO] [internal/pipeline/stages/vad/mock.go:53] client_id=client-a vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=4
+[2026-04-25T14:39:19.613+08:00] [INFO] [internal/controller/controller.go:86] client_id=client-a controller event event_type=speech_started direction=uplink stage=vad_mock
+[2026-04-25T14:39:19.613+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-a websocket sending json={"type":"input_audio_buffer.speech_started"}
+[2026-04-25T14:39:19.613+08:00] [INFO] [internal/controller/controller.go:86] client_id=client-a controller event event_type=speech_stopped direction=uplink stage=vad_mock
+[2026-04-25T14:39:19.613+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-a websocket sending json={"type":"input_audio_buffer.speech_stopped"}
+[2026-04-25T14:39:19.613+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-a websocket sending json={"type":"input_audio_buffer.committed"}
+[2026-04-25T14:39:19.613+08:00] [INFO] [internal/application/mock.go:81] client_id=client-a service connector received message protocol=mock_service direction=uplink type=response_create bytes=0
+[2026-04-25T14:39:19.613+08:00] [INFO] [internal/application/mock.go:67] client_id=client-a service connector received frame protocol=mock_service direction=uplink codec=pcm16le bytes=4
+[2026-04-25T14:39:19.624+08:00] [INFO] [internal/session/session.go:352] client_id=client-a session closed reason=session removed
+[2026-04-25T14:39:19.656+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-b websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:19.656+08:00] [INFO] [internal/session/session.go:199] client_id=client-b session created protocol=websocket
+[2026-04-25T14:39:19.656+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-b websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:19.656+08:00] [INFO] [internal/websocket/server.go:228] client_id=client-b websocket channel connected protocol=websocket channel=stream
+[2026-04-25T14:39:19.656+08:00] [DEBUG] [internal/websocket/server.go:258] client_id=client-b websocket received json={"type":"input_audio_buffer.commit"}
+[2026-04-25T14:39:19.656+08:00] [INFO] [internal/websocket/server.go:330] client_id=client-b websocket stream event received event_type=input_audio_buffer.commit event_id=
+[2026-04-25T14:39:19.656+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-b websocket sending json={"type":"input_audio_buffer.committed"}
+[2026-04-25T14:39:19.656+08:00] [INFO] [internal/application/mock.go:81] client_id=client-b service connector received message protocol=mock_service direction=uplink type=response_create bytes=0
+[2026-04-25T14:39:19.707+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-b websocket sending json={"type":"response.created"}
+[2026-04-25T14:39:19.707+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-b websocket sending json={"type":"response.audio_transcript.delta","delta":"ok"}
+[2026-04-25T14:39:19.757+08:00] [INFO] [internal/session/session.go:352] client_id=client-b session closed reason=session removed
+[2026-04-25T14:39:19.947+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-c websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:19.947+08:00] [INFO] [internal/session/session.go:199] client_id=client-c session created protocol=websocket
+[2026-04-25T14:39:19.947+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-c websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:19.947+08:00] [INFO] [internal/websocket/server.go:228] client_id=client-c websocket channel connected protocol=websocket channel=stream
+[2026-04-25T14:39:19.947+08:00] [DEBUG] [internal/websocket/server.go:258] client_id=client-c websocket received json=not-json
+[2026-04-25T14:39:19.947+08:00] [ERROR] [internal/session/session.go:482] client_id=client-c session error: parse stream event: invalid character 'o' in literal null (expecting 'u')
+[2026-04-25T14:39:19.947+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-c websocket sending json={"type":"error","message":"invalid json: invalid character 'o' in literal null (expecting 'u')"}
+[2026-04-25T14:39:20.049+08:00] [DEBUG] [internal/websocket/server.go:258] client_id=client-c websocket received json={"event_id":"append-test","type":"input_audio_buffer.append","audio":"1Q=="}
+[2026-04-25T14:39:20.049+08:00] [INFO] [internal/session/session.go:359] client_id=client-c connector event event_type=input_audio_buffer.append bytes=76
+[2026-04-25T14:39:20.049+08:00] [INFO] [internal/pipeline/stages/audioenhancement/mock.go:72] client_id=client-c audio enhancement processed direction=uplink codec=pcm16le bytes=2 rtt_ms= file=runtime/pcm/client-c.pcm
+[2026-04-25T14:39:20.049+08:00] [INFO] [internal/pipeline/stages/vad/mock.go:53] client_id=client-c vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=2
+[2026-04-25T14:39:20.049+08:00] [INFO] [internal/controller/controller.go:86] client_id=client-c controller event event_type=speech_started direction=uplink stage=vad_mock
+[2026-04-25T14:39:20.049+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-c websocket sending json={"type":"input_audio_buffer.speech_started"}
+[2026-04-25T14:39:20.049+08:00] [INFO] [internal/controller/controller.go:86] client_id=client-c controller event event_type=speech_stopped direction=uplink stage=vad_mock
+[2026-04-25T14:39:20.049+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-c websocket sending json={"type":"input_audio_buffer.speech_stopped"}
+[2026-04-25T14:39:20.049+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-c websocket sending json={"type":"input_audio_buffer.committed"}
+[2026-04-25T14:39:20.049+08:00] [INFO] [internal/application/mock.go:81] client_id=client-c service connector received message protocol=mock_service direction=uplink type=response_create bytes=0
+[2026-04-25T14:39:20.049+08:00] [INFO] [internal/application/mock.go:67] client_id=client-c service connector received frame protocol=mock_service direction=uplink codec=pcm16le bytes=2
+[2026-04-25T14:39:20.060+08:00] [INFO] [internal/session/session.go:352] client_id=client-c session closed reason=session removed
+[2026-04-25T14:39:20.149+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-cancel websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:20.149+08:00] [INFO] [internal/session/session.go:199] client_id=client-cancel session created protocol=websocket
+[2026-04-25T14:39:20.149+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-cancel websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:20.149+08:00] [INFO] [internal/websocket/server.go:228] client_id=client-cancel websocket channel connected protocol=websocket channel=stream
+[2026-04-25T14:39:20.149+08:00] [DEBUG] [internal/websocket/server.go:258] client_id=client-cancel websocket received json={"event_id":"cancel-1","type":"response.cancel"}
+[2026-04-25T14:39:20.150+08:00] [INFO] [internal/websocket/server.go:344] client_id=client-cancel websocket stream event received event_type=response.cancel event_id=cancel-1
+[2026-04-25T14:39:20.150+08:00] [INFO] [internal/session/session.go:359] client_id=client-cancel connector event event_type=response.cancel bytes=48
+[2026-04-25T14:39:20.150+08:00] [INFO] [internal/application/mock.go:81] client_id=client-cancel service connector received message protocol=mock_service direction=uplink type=response_cancel bytes=0
+[2026-04-25T14:39:20.150+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-cancel websocket sending json={"type":"response.done"}
+[2026-04-25T14:39:20.150+08:00] [INFO] [internal/session/session.go:352] client_id=client-cancel session closed reason=session removed
+[2026-04-25T14:39:20.244+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-speech websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:20.244+08:00] [INFO] [internal/session/session.go:199] client_id=client-speech session created protocol=websocket
+[2026-04-25T14:39:20.244+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-speech websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:20.244+08:00] [INFO] [internal/websocket/server.go:228] client_id=client-speech websocket channel connected protocol=websocket channel=stream
+[2026-04-25T14:39:20.244+08:00] [DEBUG] [internal/websocket/server.go:258] client_id=client-speech websocket received json={"event_id":"append-test","type":"input_audio_buffer.append","audio":"1VU="}
+[2026-04-25T14:39:20.244+08:00] [INFO] [internal/session/session.go:359] client_id=client-speech connector event event_type=input_audio_buffer.append bytes=76
+[2026-04-25T14:39:20.244+08:00] [INFO] [internal/pipeline/stages/audioenhancement/mock.go:72] client_id=client-speech audio enhancement processed direction=uplink codec=pcm16le bytes=4 rtt_ms= file=runtime/pcm/client-speech.pcm
+[2026-04-25T14:39:20.244+08:00] [INFO] [internal/pipeline/stages/vad/mock.go:53] client_id=client-speech vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=4
+[2026-04-25T14:39:20.244+08:00] [INFO] [internal/controller/controller.go:86] client_id=client-speech controller event event_type=speech_started direction=uplink stage=vad_mock
+[2026-04-25T14:39:20.244+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-speech websocket sending json={"type":"input_audio_buffer.speech_started"}
+[2026-04-25T14:39:20.244+08:00] [INFO] [internal/controller/controller.go:86] client_id=client-speech controller event event_type=speech_stopped direction=uplink stage=vad_mock
+[2026-04-25T14:39:20.244+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-speech websocket sending json={"type":"input_audio_buffer.speech_stopped"}
+[2026-04-25T14:39:20.244+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-speech websocket sending json={"type":"input_audio_buffer.committed"}
+[2026-04-25T14:39:20.244+08:00] [INFO] [internal/application/mock.go:81] client_id=client-speech service connector received message protocol=mock_service direction=uplink type=response_create bytes=0
+[2026-04-25T14:39:20.244+08:00] [INFO] [internal/application/mock.go:67] client_id=client-speech service connector received frame protocol=mock_service direction=uplink codec=pcm16le bytes=4
+[2026-04-25T14:39:20.255+08:00] [INFO] [internal/session/session.go:352] client_id=client-speech session closed reason=session removed
+[2026-04-25T14:39:20.839+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-control websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:20.840+08:00] [INFO] [internal/session/session.go:199] client_id=client-control session created protocol=websocket
+[2026-04-25T14:39:20.840+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-control websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:20.840+08:00] [INFO] [internal/websocket/server.go:228] client_id=client-control websocket channel connected protocol=websocket channel=stream
+[2026-04-25T14:39:20.840+08:00] [DEBUG] [internal/websocket/server.go:258] client_id=client-control websocket received json={"event_id":"commit-1","type":"input_audio_buffer.commit"}
+[2026-04-25T14:39:20.840+08:00] [INFO] [internal/websocket/server.go:330] client_id=client-control websocket stream event received event_type=input_audio_buffer.commit event_id=commit-1
+[2026-04-25T14:39:20.840+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-control websocket sending json={"type":"input_audio_buffer.committed"}
+[2026-04-25T14:39:20.840+08:00] [INFO] [internal/application/mock.go:81] client_id=client-control service connector received message protocol=mock_service direction=uplink type=response_create bytes=0
+[2026-04-25T14:39:20.840+08:00] [DEBUG] [internal/websocket/server.go:258] client_id=client-control websocket received json={"event_id":"cancel-1","type":"response.cancel"}
+[2026-04-25T14:39:20.840+08:00] [INFO] [internal/websocket/server.go:344] client_id=client-control websocket stream event received event_type=response.cancel event_id=cancel-1
+[2026-04-25T14:39:20.840+08:00] [INFO] [internal/application/mock.go:81] client_id=client-control service connector received message protocol=mock_service direction=uplink type=response_cancel bytes=0
+[2026-04-25T14:39:20.840+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-control websocket sending json={"type":"response.done"}
+[2026-04-25T14:39:20.840+08:00] [DEBUG] [internal/websocket/server.go:258] client_id=client-control websocket received json={"event_id":"session-1","type":"session.update","session":{"object":"realtime.session","input_audio_format":"g711_alaw","output_audio_format":"g711_alaw"}}
+[2026-04-25T14:39:20.840+08:00] [INFO] [internal/websocket/server.go:351] client_id=client-control websocket stream event received event_type=session.update event_id=session-1
+[2026-04-25T14:39:20.840+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-control websocket sending json={"type":"session.updated"}
+[2026-04-25T14:39:20.941+08:00] [INFO] [internal/session/session.go:352] client_id=client-control session closed reason=session removed
+[2026-04-25T14:39:20.974+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=hardware-realtime websocket handshake path=/v1/realtime raw_query=bot=bot-test&wait_for_session_update=true auth_type=1 device_name=device-test instance_id=instance-test signature_present=true
+[2026-04-25T14:39:20.974+08:00] [INFO] [internal/session/session.go:199] client_id=hardware-realtime session created protocol=websocket
+[2026-04-25T14:39:20.974+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=hardware-realtime websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:20.974+08:00] [INFO] [internal/websocket/server.go:228] client_id=hardware-realtime websocket channel connected protocol=websocket channel=stream
+[2026-04-25T14:39:20.974+08:00] [INFO] [internal/session/session.go:352] client_id=hardware-realtime session closed reason=session removed
+[2026-04-25T14:39:21.284+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-ack websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:21.284+08:00] [INFO] [internal/session/session.go:199] client_id=client-ack session created protocol=websocket
+[2026-04-25T14:39:21.284+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-ack websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:21.284+08:00] [INFO] [internal/websocket/server.go:228] client_id=client-ack websocket channel connected protocol=websocket channel=stream
+[2026-04-25T14:39:21.284+08:00] [DEBUG] [internal/websocket/server.go:258] client_id=client-ack websocket received json={"event_id":"session-ack","type":"session.update","session":{"object":"realtime.session","input_audio_format":"g711_alaw","output_audio_format":"g711_alaw"}}
+[2026-04-25T14:39:21.284+08:00] [INFO] [internal/websocket/server.go:351] client_id=client-ack websocket stream event received event_type=session.update event_id=session-ack
+[2026-04-25T14:39:21.284+08:00] [INFO] [internal/session/session.go:359] client_id=client-ack connector event event_type=session.update bytes=157
+[2026-04-25T14:39:21.284+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-ack websocket sending json={"type":"session.updated"}
+[2026-04-25T14:39:21.284+08:00] [DEBUG] [internal/websocket/server.go:258] client_id=client-ack websocket received json={"event_id":"commit-ack","type":"input_audio_buffer.commit"}
+[2026-04-25T14:39:21.284+08:00] [INFO] [internal/websocket/server.go:330] client_id=client-ack websocket stream event received event_type=input_audio_buffer.commit event_id=commit-ack
+[2026-04-25T14:39:21.284+08:00] [INFO] [internal/session/session.go:359] client_id=client-ack connector event event_type=input_audio_buffer.commit bytes=60
+[2026-04-25T14:39:21.284+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-ack websocket sending json={"type":"input_audio_buffer.committed"}
+[2026-04-25T14:39:21.284+08:00] [INFO] [internal/application/mock.go:81] client_id=client-ack service connector received message protocol=mock_service direction=uplink type=response_create bytes=0
+[2026-04-25T14:39:21.284+08:00] [INFO] [internal/session/session.go:352] client_id=client-ack session closed reason=session removed
+[2026-04-25T14:39:21.417+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-response websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:21.418+08:00] [INFO] [internal/session/session.go:199] client_id=client-response session created protocol=websocket
+[2026-04-25T14:39:21.418+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-response websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:21.418+08:00] [INFO] [internal/websocket/server.go:228] client_id=client-response websocket channel connected protocol=websocket channel=stream
+[2026-04-25T14:39:21.418+08:00] [DEBUG] [internal/websocket/server.go:258] client_id=client-response websocket received json={"event_id":"create-1","type":"response.create"}
+[2026-04-25T14:39:21.418+08:00] [INFO] [internal/websocket/server.go:337] client_id=client-response websocket stream event received event_type=response.create event_id=create-1
+[2026-04-25T14:39:21.418+08:00] [INFO] [internal/session/session.go:359] client_id=client-response connector event event_type=response.create bytes=48
+[2026-04-25T14:39:21.418+08:00] [INFO] [internal/application/mock.go:81] client_id=client-response service connector received message protocol=mock_service direction=uplink type=response_create bytes=0
+[2026-04-25T14:39:21.471+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-response websocket sending json={"type":"response.created"}
+[2026-04-25T14:39:21.471+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-response websocket sending json={"type":"response.audio_transcript.delta","delta":"ok"}
+[2026-04-25T14:39:21.522+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-response websocket sending json={"type":"response.audio.delta","delta":"1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1Q=="}
+[2026-04-25T14:39:21.522+08:00] [INFO] [internal/pipeline/stages/audioenhancement/mock.go:56] client_id=client-response audio enhancement reference received direction=downlink codec=pcm16le bytes=320
+[2026-04-25T14:39:21.573+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-response websocket sending json={"type":"response.done"}
+[2026-04-25T14:39:21.574+08:00] [INFO] [internal/session/session.go:352] client_id=client-response session closed reason=session removed
+[2026-04-25T14:39:21.645+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-d websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:21.645+08:00] [INFO] [internal/session/session.go:199] client_id=client-d session created protocol=websocket
+[2026-04-25T14:39:21.645+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-d websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:21.645+08:00] [INFO] [internal/websocket/server.go:228] client_id=client-d websocket channel connected protocol=websocket channel=stream
+[2026-04-25T14:39:21.645+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-d websocket sending json={"type":"response.created"}
+[2026-04-25T14:39:21.645+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-d websocket sending json={"type":"response.audio.delta","delta":"1Zc="}
+[2026-04-25T14:39:21.645+08:00] [INFO] [internal/pipeline/stages/audioenhancement/mock.go:56] client_id=client-d audio enhancement reference received direction=downlink codec=pcm16le bytes=4
+[2026-04-25T14:39:21.646+08:00] [INFO] [internal/session/session.go:352] client_id=client-d session closed reason=session removed
+[2026-04-25T14:39:21.777+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-text websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:21.777+08:00] [INFO] [internal/session/session.go:199] client_id=client-text session created protocol=websocket
+[2026-04-25T14:39:21.777+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-text websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:21.777+08:00] [INFO] [internal/websocket/server.go:228] client_id=client-text websocket channel connected protocol=websocket channel=stream
+[2026-04-25T14:39:21.777+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-text websocket sending json={"type":"response.text.delta","text":"hello"}
+[2026-04-25T14:39:21.777+08:00] [INFO] [internal/session/session.go:352] client_id=client-text session closed reason=session removed
+[2026-04-25T14:39:22.345+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-f websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:22.345+08:00] [INFO] [internal/session/session.go:199] client_id=client-f session created protocol=websocket
+[2026-04-25T14:39:22.345+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-f websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:22.345+08:00] [INFO] [internal/websocket/server.go:228] client_id=client-f websocket channel connected protocol=websocket channel=stream
+[2026-04-25T14:39:22.346+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-f websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:22.346+08:00] [INFO] [internal/session/session.go:352] client_id=client-f session closed reason=session removed
+[2026-04-25T14:39:22.402+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-g websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:22.402+08:00] [INFO] [internal/session/session.go:199] client_id=client-g session created protocol=websocket
+[2026-04-25T14:39:22.402+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-g websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:22.402+08:00] [INFO] [internal/websocket/server.go:228] client_id=client-g websocket channel connected protocol=websocket channel=stream
+[2026-04-25T14:39:22.433+08:00] [INFO] [internal/session/session.go:352] client_id=client-g session closed reason=session removed
+[2026-04-25T14:39:22.598+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-h websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:22.598+08:00] [ERROR] [internal/websocket/server.go:629] client_id=client-h websocket connector error: attach failed
+[2026-04-25T14:39:22.599+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-h websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:22.599+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-h websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:22.599+08:00] [INFO] [internal/websocket/server.go:228] client_id=client-h websocket channel connected protocol=websocket channel=stream
+[2026-04-25T14:39:22.759+08:00] [DEBUG] [internal/websocket/server.go:185] client_id=client-i websocket handshake path=/v1/realtime raw_query= auth_type= device_name= instance_id= signature_present=false
+[2026-04-25T14:39:22.759+08:00] [INFO] [internal/session/session.go:199] client_id=client-i session created protocol=websocket
+[2026-04-25T14:39:22.759+08:00] [DEBUG] [internal/websocket/server.go:527] client_id=client-i websocket sending json={"type":"session.created"}
+[2026-04-25T14:39:22.759+08:00] [INFO] [internal/websocket/server.go:228] client_id=client-i websocket channel connected protocol=websocket channel=stream

@@ -1,0 +1,9 @@
+time=2026-04-25T11:23:01.625+08:00 level=INFO msg="client_id=client-a vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=2" caller=internal/pipeline/stages/vad/mock.go:53
+time=2026-04-25T11:23:01.625+08:00 level=INFO msg="client_id=client-a vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=2" caller=internal/pipeline/stages/vad/mock.go:53
+time=2026-04-25T11:23:01.625+08:00 level=INFO msg="client_id=client-a vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=2" caller=internal/pipeline/stages/vad/mock.go:53
+time=2026-04-25T14:31:15.247+08:00 level=INFO msg="client_id=client-a vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=2" caller=internal/pipeline/stages/vad/mock.go:53
+time=2026-04-25T14:31:15.247+08:00 level=INFO msg="client_id=client-a vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=2" caller=internal/pipeline/stages/vad/mock.go:53
+time=2026-04-25T14:31:15.247+08:00 level=INFO msg="client_id=client-a vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=2" caller=internal/pipeline/stages/vad/mock.go:53
+[2026-04-25T14:39:18.682+08:00] [INFO] [internal/pipeline/stages/vad/mock.go:53] client_id=client-a vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=2
+[2026-04-25T14:39:18.682+08:00] [INFO] [internal/pipeline/stages/vad/mock.go:53] client_id=client-a vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=2
+[2026-04-25T14:39:18.682+08:00] [INFO] [internal/pipeline/stages/vad/mock.go:53] client_id=client-a vad processed pcm stage=vad_mock direction=uplink codec=pcm16le bytes=2

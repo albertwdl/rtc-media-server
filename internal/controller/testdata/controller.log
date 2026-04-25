@@ -1,0 +1,12 @@
+time=2026-04-25T11:23:01.226+08:00 level=INFO msg="client_id=client-b controller event event_type=silence_timeout direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T11:23:01.226+08:00 level=INFO msg="client_id=client-b controller close session reason=silence timeout" caller=internal/controller/controller.go:134
+time=2026-04-25T11:23:01.226+08:00 level=INFO msg="client_id=client-speech controller event event_type=speech_started direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T11:23:01.226+08:00 level=INFO msg="client_id=client-speech controller event event_type=speech_stopped direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T14:31:13.679+08:00 level=INFO msg="client_id=client-b controller event event_type=silence_timeout direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T14:31:13.679+08:00 level=INFO msg="client_id=client-b controller close session reason=silence timeout" caller=internal/controller/controller.go:134
+time=2026-04-25T14:31:13.679+08:00 level=INFO msg="client_id=client-speech controller event event_type=speech_started direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T14:31:13.679+08:00 level=INFO msg="client_id=client-speech controller event event_type=speech_stopped direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+[2026-04-25T14:39:17.158+08:00] [INFO] [internal/controller/controller.go:86] client_id=client-b controller event event_type=silence_timeout direction=uplink stage=vad_mock
+[2026-04-25T14:39:17.158+08:00] [INFO] [internal/controller/controller.go:134] client_id=client-b controller close session reason=silence timeout
+[2026-04-25T14:39:17.158+08:00] [INFO] [internal/controller/controller.go:86] client_id=client-speech controller event event_type=speech_started direction=uplink stage=vad_mock
+[2026-04-25T14:39:17.159+08:00] [INFO] [internal/controller/controller.go:86] client_id=client-speech controller event event_type=speech_stopped direction=uplink stage=vad_mock

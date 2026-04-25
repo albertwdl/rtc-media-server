@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
 	"net"
 	"os"
@@ -46,6 +47,14 @@ func main() {
 	appCfg, err := config.Load(configPath)
 	if err != nil {
 		fatal("load config failed", err)
+	}
+	if err := log.Init(log.Options{
+		Level:  appCfg.Log.Level,
+		Format: appCfg.Log.Format,
+		File:   appCfg.Log.File,
+	}); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "init log failed: %v\n", err)
+		os.Exit(exitFailure)
 	}
 
 	if err := ensureDemoCertificate(appCfg.WebSocket.TLS.CertFile, appCfg.WebSocket.TLS.KeyFile); err != nil {

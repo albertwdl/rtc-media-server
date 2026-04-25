@@ -1,0 +1,75 @@
+time=2026-04-25T11:23:02.839+08:00 level=INFO msg="client_id=client-a session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T11:23:02.839+08:00 level=INFO msg="client_id=client-a session closed reason=test done" caller=internal/session/session.go:352
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-b session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-b session closed reason=test done" caller=internal/session/session.go:352
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-b audio enhancement reference received direction=downlink codec=pcm16le bytes=4" caller=internal/pipeline/stages/audioenhancement/mock.go:56
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-rtt-downlink session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-rtt-downlink session closed reason=test done" caller=internal/session/session.go:352
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-msg session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-msg session closed reason=test done" caller=internal/session/session.go:352
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-command session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-command service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-command session closed reason=test done" caller=internal/session/session.go:352
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-speech session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-speech controller event event_type=speech_started direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-speech controller event event_type=speech_stopped direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-speech service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-speech session closed reason=test done" caller=internal/session/session.go:352
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-c session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-c session closed reason=test done" caller=internal/session/session.go:352
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-d session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-d session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-e session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-f session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-e session closed reason=manager closed" caller=internal/session/session.go:352
+time=2026-04-25T11:23:02.840+08:00 level=INFO msg="client_id=client-f session closed reason=manager closed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:15.637+08:00 level=INFO msg="client_id=client-a session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-a session closed reason=test done" caller=internal/session/session.go:352
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-b session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-b session closed reason=test done" caller=internal/session/session.go:352
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-b audio enhancement reference received direction=downlink codec=pcm16le bytes=4" caller=internal/pipeline/stages/audioenhancement/mock.go:56
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-rtt-downlink session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-rtt-downlink session closed reason=test done" caller=internal/session/session.go:352
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-msg session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-msg session closed reason=test done" caller=internal/session/session.go:352
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-command session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-command service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-command session closed reason=test done" caller=internal/session/session.go:352
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-speech session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-speech controller event event_type=speech_started direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-speech controller event event_type=speech_stopped direction=uplink stage=vad_mock" caller=internal/controller/controller.go:86
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-speech service connector received message protocol=mock_service direction=uplink type=response_create bytes=0" caller=internal/application/mock.go:81
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-speech session closed reason=test done" caller=internal/session/session.go:352
+time=2026-04-25T14:31:15.638+08:00 level=INFO msg="client_id=client-c session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T14:31:15.639+08:00 level=INFO msg="client_id=client-c session closed reason=test done" caller=internal/session/session.go:352
+time=2026-04-25T14:31:15.639+08:00 level=INFO msg="client_id=client-d session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T14:31:15.639+08:00 level=INFO msg="client_id=client-d session closed reason=session removed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:15.639+08:00 level=INFO msg="client_id=client-e session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T14:31:15.639+08:00 level=INFO msg="client_id=client-f session created protocol=test_client" caller=internal/session/session.go:199
+time=2026-04-25T14:31:15.639+08:00 level=INFO msg="client_id=client-e session closed reason=manager closed" caller=internal/session/session.go:352
+time=2026-04-25T14:31:15.639+08:00 level=INFO msg="client_id=client-f session closed reason=manager closed" caller=internal/session/session.go:352
+[2026-04-25T14:39:19.073+08:00] [INFO] [internal/session/session.go:199] client_id=client-a session created protocol=test_client
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/session/session.go:352] client_id=client-a session closed reason=test done
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/session/session.go:199] client_id=client-b session created protocol=test_client
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/session/session.go:352] client_id=client-b session closed reason=test done
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/pipeline/stages/audioenhancement/mock.go:56] client_id=client-b audio enhancement reference received direction=downlink codec=pcm16le bytes=4
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/session/session.go:199] client_id=client-rtt-downlink session created protocol=test_client
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/session/session.go:352] client_id=client-rtt-downlink session closed reason=test done
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/session/session.go:199] client_id=client-msg session created protocol=test_client
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/session/session.go:352] client_id=client-msg session closed reason=test done
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/session/session.go:199] client_id=client-command session created protocol=test_client
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/application/mock.go:81] client_id=client-command service connector received message protocol=mock_service direction=uplink type=response_create bytes=0
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/session/session.go:352] client_id=client-command session closed reason=test done
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/session/session.go:199] client_id=client-speech session created protocol=test_client
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/controller/controller.go:86] client_id=client-speech controller event event_type=speech_started direction=uplink stage=vad_mock
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/controller/controller.go:86] client_id=client-speech controller event event_type=speech_stopped direction=uplink stage=vad_mock
+[2026-04-25T14:39:19.074+08:00] [INFO] [internal/application/mock.go:81] client_id=client-speech service connector received message protocol=mock_service direction=uplink type=response_create bytes=0
+[2026-04-25T14:39:19.075+08:00] [INFO] [internal/session/session.go:352] client_id=client-speech session closed reason=test done
+[2026-04-25T14:39:19.075+08:00] [INFO] [internal/session/session.go:199] client_id=client-c session created protocol=test_client
+[2026-04-25T14:39:19.075+08:00] [INFO] [internal/session/session.go:352] client_id=client-c session closed reason=test done
+[2026-04-25T14:39:19.075+08:00] [INFO] [internal/session/session.go:199] client_id=client-d session created protocol=test_client
+[2026-04-25T14:39:19.075+08:00] [INFO] [internal/session/session.go:352] client_id=client-d session closed reason=session removed
+[2026-04-25T14:39:19.075+08:00] [INFO] [internal/session/session.go:199] client_id=client-e session created protocol=test_client
+[2026-04-25T14:39:19.075+08:00] [INFO] [internal/session/session.go:199] client_id=client-f session created protocol=test_client
+[2026-04-25T14:39:19.075+08:00] [INFO] [internal/session/session.go:352] client_id=client-e session closed reason=manager closed
+[2026-04-25T14:39:19.075+08:00] [INFO] [internal/session/session.go:352] client_id=client-f session closed reason=manager closed
