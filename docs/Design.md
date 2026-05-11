@@ -1,39 +1,51 @@
 # 架构设计与开发规则
 
-本文档记录当前 `rtc-media-server` 必须遵守的架构边界、数据流和实现规则。文档以当前代码实现为准，目标是让后续开发保持最短路径、边界清晰、避免过度抽象。
+本文档记录 `rtc-media-server` 必须遵守的目标架构边界、数据流和实现规则。文档以最终完整系统为准，目标是让后续开发保持边界清晰、路径直接、避免过度抽象。
+
+## 文档导航
+
+- [项目文档入口](README.md)：项目目标、系统能力和推荐阅读路径。
+- [使用说明](Usage.md)：本地启动、配置、测试、WSS 联调事件和运行产物。
+- [架构说明](Architecture.md)：全局架构、细粒度架构、数据流、控制流和生命周期。
+- [全局架构 Mermaid 图源](uml/global-architecture.mmd)：系统级组件关系。
+- [Session 细粒度 Mermaid 图源](uml/session-detail.mmd)：单连接内部组件和 stage chain。
+- [联调时序 Mermaid 图源](uml/stream-sequence.mmd)：典型 realtime WebSocket 串流时序。
 
 ## 项目目标
 
-当前阶段实现的是最小 WebSocket 串流服务，用于端侧 realtime WebSocket 串流联调。
+`rtc-media-server` 是端侧 realtime WebSocket 与 AI Edge Agent 之间的媒体接入服务。
 
-当前服务只保证：
+系统保证：
 
 - 端侧通过 `/v1/realtime` 建立 WSS 连接。
 - 端侧上传 G.711 A-law base64 音频，云侧解码为 PCM 后进入上行处理链路。
-- 云侧通过 mock service 模拟文本、TTS PCM 和结束事件。
+- 上行 PCM 经过 `audio_enhancement(AEC/AGC/ANS)` 和 `vad` 后，通过 `ServiceConnector` 投递给 AI Edge Agent。
+- AI Edge Agent 返回文本 delta、TTS PCM 和结束事件。
 - 下行 PCM 经媒体 pipeline 编码为 G.711 A-law base64，再打包为端侧需要的 JSON。
-
-当前服务不做：
-
-- 设备动态注册。
-- 签名、时间戳、随机数等鉴权健全性校验。
-- 真实 ASR、真实对话生成、真实 TTS。
-- WebRTC、GStreamer 或多协议接入。
 
 ## 核心架构
 
 整体结构如下：
 
-```text
-WebSocket Server
-  -> ClientConnector
-  -> SessionManager.Attach(client)
-  -> Session
-       -> ClientConnector
-       -> ServiceConnector
-       -> Controller
-       -> Uplink Pipeline
-       -> Downlink Pipeline
+```mermaid
+flowchart TD
+    WSS["WebSocket Server"]
+    ClientConnector["ClientConnector"]
+    Attach["SessionManager.Attach(client)"]
+    Session["Session"]
+    SessionClient["ClientConnector"]
+    ServiceConnector["ServiceConnector"]
+    Agent["AI Edge Agent"]
+    Controller["Controller"]
+    Uplink["Uplink Pipeline"]
+    Downlink["Downlink Pipeline"]
+
+    WSS --> ClientConnector --> Attach --> Session
+    Session --> SessionClient
+    Session --> ServiceConnector --> Agent
+    Session --> Controller
+    Session --> Uplink
+    Session --> Downlink
 ```
 
 核心规则：
@@ -41,7 +53,8 @@ WebSocket Server
 - `WebSocket Server` 是全局监听器，只负责 WSS 接入和客户端连接管理。
 - 每个客户端连接创建一个 `ClientConnector`。
 - `SessionManager` 只管理 `map[clientID]*Session`，不持有 stage，不直接处理业务协议。
-- `Session` 是单客户端业务会话，持有当前客户端的 connector、service connector、controller 和双向 pipeline。
+- `Session` 是单客户端业务会话，持有当前客户端 connector、service connector、controller 和双向 pipeline。
+- `ServiceConnector` 是 AI Edge Agent 的连接边界，负责服务侧协议适配。
 - `Pipeline` 持有 stage，stage 不直接操作 connector。
 - `Controller` 只负责跨管线协调，不做音频算法。
 
@@ -76,10 +89,10 @@ WebSocket Server
 职责：
 
 - 创建并管理单个客户端的 `ClientConnector`、`ServiceConnector`、`Controller`、上行 pipeline 和下行 pipeline。
-- 固定组装当前 stage chain。
+- 固定组装目标 stage chain。
 - 接收 VAD/Controller 事件，并向 `ClientConnector.SendMessage` 发送中性 `connector.Message`。
 - 接收 service 消息，并驱动端侧 response 事件和下行音频投递。
-- 保存后台 RTT 测量结果，供 3A stage 读取。
+- 保存后台 RTT 测量结果，供音频增强 stage 读取。
 
 约束：
 
@@ -107,10 +120,8 @@ WebSocket Server
 
 - `BindAudioOutput`：绑定服务侧返回音频后推送到的输出端。
 - `BindMessageOutput`：绑定服务侧返回消息后推送到的输出端。
-- `SendAudio`：接收上行 pipeline 输出的音频。
-- `SendMessage`：接收 Session 发出的中性控制消息。
-
-当前 `internal/application.MockConnector` 是 mock service connector，用于联调，不代表真实后端协议。
+- `SendAudio`：接收上行 pipeline 输出的音频并转发给 AI Edge Agent。
+- `SendMessage`：接收 Session 发出的中性控制消息并转发给 AI Edge Agent。
 
 ### pipeline
 
@@ -149,70 +160,85 @@ WebSocket Server
 - Controller 不直接拼端侧 JSON。
 - Controller 不直接读写 WebSocket。
 
-### application
+### AI Edge Agent
 
-`internal/application` 当前只提供 mock service connector。
+AI Edge Agent 是服务侧智能能力边界。
 
 职责：
 
-- 接收上行处理后的 PCM。
-- 接收 Session 发出的中性 response 控制消息。
-- 模拟后端返回文本 delta、静音 PCM 和 done。
+- 接收 `ServiceConnector` 转发的上行 PCM 和控制消息。
+- 执行 ASR、Dialogue 和 TTS 能力。
+- 返回文本 delta、TTS PCM 和 done。
 
-真实后端接入时，应替换 `MockConnector`，但不要改变 Session、pipeline 和 websocket 的职责边界。
+`rtc-media-server` 只通过 `ServiceConnector` 与 Agent 交互，不让 websocket、pipeline stage 或 controller 直接调用 Agent。
 
-## 当前数据流
+## 数据流
 
 ### 上行音频
 
-```text
-端侧 JSON input_audio_buffer.append.audio
-  -> WebSocket ClientConnector 提取 audio 字段
-  -> media.Frame{Codec: base64}
-  -> base64_decode
-  -> alaw_decode
-  -> aec_agc_ans_mock
-  -> vad_mock
-  -> ServiceConnector.SendAudio
+```mermaid
+flowchart LR
+    Event["端侧 JSON<br/>input_audio_buffer.append.audio"]
+    Extract["WebSocket ClientConnector<br/>提取 audio 字段"]
+    Frame["media.Frame<br/>Codec: base64"]
+    Base64["base64_decode"]
+    ALaw["alaw_decode"]
+    Enhancement["audio_enhancement<br/>AEC / AGC / ANS"]
+    VAD["vad"]
+    SendAudio["ServiceConnector.SendAudio"]
+    Agent["AI Edge Agent"]
+
+    Event --> Extract --> Frame --> Base64 --> ALaw --> Enhancement --> VAD --> SendAudio --> Agent
 ```
 
-当前上行输入音频约定为 G.711 A-law base64，解码后进入 pipeline 的 PCM 为 PCM16LE。
+上行输入音频约定为 G.711 A-law base64，解码后进入 pipeline 的 PCM 为 PCM16LE。
 
 ### 下行音频
 
-```text
-ServiceConnector 返回 PCM
-  -> Session.EnqueueDownlink
-  -> pcm_normalize
-  -> reference_tap
-  -> alaw_encode
-  -> base64_encode
-  -> ClientConnector.SendAudio
-  -> WebSocket JSON response.audio.delta
+```mermaid
+flowchart LR
+    Agent["AI Edge Agent<br/>返回 TTS PCM"]
+    Service["ServiceConnector"]
+    Enqueue["Session.EnqueueDownlink"]
+    Normalize["pcm_normalize"]
+    Tap["reference_tap"]
+    ALaw["alaw_encode"]
+    Base64["base64_encode"]
+    SendAudio["ClientConnector.SendAudio"]
+    Delta["WebSocket JSON<br/>response.audio.delta"]
+
+    Agent --> Service --> Enqueue --> Normalize --> Tap --> ALaw --> Base64 --> SendAudio --> Delta
 ```
 
 `reference_tap` 会把编码前的 PCM 副本交给 Controller，再由 Controller 异步分发给 AEC stage。
 
 ### 控制消息
 
-```text
-端侧控制 JSON
-  -> WebSocket ClientConnector 解析 type
-  -> connector.Message
-  -> Session.OnClientMessage
-  -> ServiceConnector.SendMessage 或 ClientConnector.SendMessage
+```mermaid
+flowchart LR
+    JSON["端侧控制 JSON"]
+    Parse["WebSocket ClientConnector<br/>解析 type"]
+    Message["connector.Message"]
+    OnClient["Session.OnClientMessage"]
+    Route["ServiceConnector.SendMessage<br/>或 ClientConnector.SendMessage"]
+    Agent["AI Edge Agent"]
+
+    JSON --> Parse --> Message --> OnClient --> Route --> Agent
 ```
 
 控制消息不进入媒体 pipeline。
 
 ### RTT
 
-```text
-WebSocket rttLoop
-  -> ClientConnector.MeasureRTT
-  -> Callbacks.OnRTT
-  -> Session.UpdateRTT
-  -> 3A stage 通过 Session.RTT getter 读取
+```mermaid
+flowchart LR
+    Loop["WebSocket rttLoop"]
+    Measure["ClientConnector.MeasureRTT"]
+    Callback["Callbacks.OnRTT"]
+    Update["Session.UpdateRTT"]
+    Enhancement["audio_enhancement<br/>Session.RTT getter"]
+
+    Loop --> Measure --> Callback --> Update --> Enhancement
 ```
 
 RTT 是连接状态，不写入 `media.Frame`，不通过 frame metadata 传递。
@@ -239,20 +265,17 @@ RTT 是连接状态，不写入 `media.Frame`，不通过 frame metadata 传递�
 
 ## Stage 规则
 
-当前固定 stage chain：
+目标固定 stage chain：
 
-```text
-uplink:
-  base64_decode
-  alaw_decode
-  aec_agc_ans_mock
-  vad_mock
+```mermaid
+flowchart LR
+    subgraph Uplink["uplink"]
+        U1["base64_decode"] --> U2["alaw_decode"] --> U3["audio_enhancement<br/>AEC / AGC / ANS"] --> U4["vad"]
+    end
 
-downlink:
-  pcm_normalize
-  reference_tap
-  alaw_encode
-  base64_encode
+    subgraph Downlink["downlink"]
+        D1["pcm_normalize"] --> D2["reference_tap"] --> D3["alaw_encode"] --> D4["base64_encode"]
+    end
 ```
 
 规则：
@@ -265,9 +288,9 @@ downlink:
 
 ## 配置说明
 
-外部配置文件为 `configs/config.yaml`。当前运行时 stage chain 在 `Session` 创建时固定组装，不通过外部配置动态构建 pipeline。
+外部配置文件为 `configs/config.yaml`。运行时 stage chain 在 `Session` 创建时固定组装，不通过外部配置动态构建 pipeline。
 
-后续如果确实需要配置化 stage chain，应重新设计最小构建逻辑，不提前恢复未使用的 registry。
+`agent.*` 配置描述 `ServiceConnector` 连接 AI Edge Agent 所需的协议、地址、TLS 和 TTS 参数。
 
 `StreamPath` 字段名仍保留在代码配置结构中，但默认值和实际语义是 realtime WebSocket 通道，即 `/v1/realtime`。
 
@@ -294,23 +317,28 @@ downlink:
 - 通用 `connector.ClientConnector` 接口中出现端侧协议专用发送方法。
 - `internal/media` 中出现 `AudioOutput`、非媒体消息模型或交互指令常量。
 
-## 当前联调时序
+## 典型联调时序
 
-典型最小流程：
+```mermaid
+sequenceDiagram
+    actor Client as 端侧
+    participant Cloud as rtc-media-server
+    participant Service as ServiceConnector
+    participant Agent as AI Edge Agent
 
-```text
-1. 端侧连接 /v1/realtime
-2. 云侧发送 session.created
-3. 端侧发送 session.update
-4. 云侧发送 session.updated
-5. 端侧发送 input_audio_buffer.append
-6. VAD mock 触发 speech_started / speech_stopped
-7. 云侧发送 input_audio_buffer.committed
-8. mock service 返回 text delta、PCM、done
-9. 云侧发送 response.created
-10. 云侧发送 response.audio_transcript.delta
-11. 云侧发送 response.audio.delta
-12. 云侧发送 response.done
+    Client->>Cloud: connect /v1/realtime
+    Cloud-->>Client: session.created
+    Client->>Cloud: session.update
+    Cloud-->>Client: session.updated
+    Client->>Cloud: input_audio_buffer.append
+    Cloud-->>Client: input_audio_buffer.speech_started
+    Cloud-->>Client: input_audio_buffer.speech_stopped
+    Cloud-->>Client: input_audio_buffer.committed
+    Cloud->>Service: response_create
+    Service->>Agent: request response
+    Agent-->>Service: text delta / TTS PCM / done
+    Cloud-->>Client: response.created
+    Cloud-->>Client: response.audio_transcript.delta
+    Cloud-->>Client: response.audio.delta
+    Cloud-->>Client: response.done
 ```
-
-该流程用于联调端侧 WebSocket 串流和播放链路，不代表真实后端智能能力。

@@ -1,0 +1,82 @@
+sequenceDiagram
+    title realtime WebSocket Stream Sequence
+    autonumber
+    actor Client as Realtime Client
+    participant WS as WebSocket Server
+    participant CC as ClientConnector
+    participant Manager as SessionManager
+    participant Session as Session
+    participant Uplink as Uplink Pipeline
+    participant Controller as Controller
+    participant Service as ServiceConnector
+    participant Agent as AI Edge Agent
+    participant Downlink as Downlink Pipeline
+
+    Client->>WS: WSS connect /v1/realtime<br/>X-Hardware-Id
+    WS->>CC: reserve client and set stream
+    WS->>Manager: OnConnect(client)
+    Manager->>Session: Attach / NewSession
+    Session->>Uplink: Start(base64_decode -> alaw_decode -> audio_enhancement -> vad)
+    Session->>Downlink: Start(pcm_normalize -> reference_tap -> alaw_encode -> base64_encode)
+    Session->>Service: BindAudioOutput / BindMessageOutput
+    Session->>CC: BindAudioOutput / BindMessageOutput
+    Service->>Agent: Open agent session
+    CC-->>Client: {"type":"session.created"}
+
+    Client->>WS: {"type":"session.update", ...}
+    WS->>CC: parse control event
+    CC->>Session: MessageSessionUpdated
+    CC-->>Client: {"type":"session.updated"}
+
+    Client->>WS: {"type":"input_audio_buffer.append","audio":"..."}
+    WS->>CC: extract audio field
+    CC->>Uplink: Frame CodecBase64
+    Uplink->>Uplink: base64_decode
+    Uplink->>Uplink: alaw_decode
+    Uplink->>Uplink: audio_enhancement(AEC/AGC/ANS)
+    Uplink->>Uplink: vad
+    Uplink->>Service: SendAudio PCM16LE
+    Service->>Agent: Stream audio PCM16LE
+
+    Uplink->>Controller: speech_started
+    Controller->>Session: OnStageEvent
+    Session->>CC: MessageSpeechStarted
+    CC-->>Client: {"type":"input_audio_buffer.speech_started"}
+
+    Uplink->>Controller: speech_stopped
+    Controller->>Session: OnStageEvent
+    Session->>CC: MessageSpeechStopped
+    CC-->>Client: {"type":"input_audio_buffer.speech_stopped"}
+    Session->>CC: MessageInputCommit
+    CC-->>Client: {"type":"input_audio_buffer.committed"}
+    Session->>Service: MessageResponseCreate
+    Service->>Agent: Request response
+
+    Agent-->>Service: response text delta
+    Service-->>Session: MessageResponseTextDelta
+    Session->>CC: MessageResponseCreate
+    CC-->>Client: {"type":"response.created"}
+    Session->>CC: MessageResponseTextDelta
+    CC-->>Client: {"type":"response.audio_transcript.delta","delta":"..."}
+
+    Agent-->>Service: TTS PCM16LE
+    Service-->>Session: PushDownlink PCM16LE
+    Session->>Downlink: EnqueueDownlink
+    Downlink->>Downlink: pcm_normalize
+    Downlink->>Controller: reference_tap PCM copy
+    Controller->>Uplink: AddReference to audio_enhancement
+    Downlink->>Downlink: alaw_encode
+    Downlink->>Downlink: base64_encode
+    Downlink->>CC: Frame CodecBase64
+    CC-->>Client: {"type":"response.audio.delta","delta":"..."}
+
+    Agent-->>Service: response done
+    Service-->>Session: MessageResponseDone
+    Session->>CC: MessageResponseDone
+    CC-->>Client: {"type":"response.done"}
+
+    loop every websocket.rtt_interval
+        WS->>CC: Ping
+        CC-->>WS: Pong RTT
+        WS->>Session: UpdateRTT
+    end

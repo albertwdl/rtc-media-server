@@ -1,0 +1,59 @@
+flowchart TD
+    Client["Realtime WebSocket Client"]
+    RuntimeFiles[("logs/")]
+
+    subgraph Process["rtc-media-server"]
+        Main["main()"]
+        Config["config<br/>internal/config"]
+        Log["log<br/>internal/log"]
+        WSS["WebSocket Server<br/>internal/websocket.Server"]
+        Manager["SessionManager<br/>internal/session.Manager"]
+
+        subgraph PerClient["Per X-Hardware-Id Session"]
+            ClientConnector["ClientConnector<br/>websocket.clientConnector"]
+            Session["Session<br/>internal/session.Session"]
+            Controller["Controller<br/>internal/controller.Controller"]
+            Uplink["Uplink Pipeline<br/>internal/pipeline.QueuePipeline"]
+            Downlink["Downlink Pipeline<br/>internal/pipeline.QueuePipeline"]
+            ServiceConnector["ServiceConnector<br/>internal/connector.ServiceConnector"]
+        end
+    end
+
+    subgraph Agent["AI Edge Agent"]
+        AgentSession["Agent Session"]
+        ASR["ASR"]
+        Dialogue["Dialogue"]
+        TTS["TTS"]
+    end
+
+    Client -->|"WSS /v1/realtime<br/>JSON events + G.711 A-law base64 audio"| WSS
+    Main -->|"load configs/config.yaml"| Config
+    Main -->|"initialize logger"| Log
+    WSS -->|"reserve by X-Hardware-Id"| ClientConnector
+    WSS -->|"OnConnect(client)"| Manager
+    Manager -->|"Attach / NewSession"| Session
+
+    Session -->|"owns"| ClientConnector
+    Session -->|"owns"| Controller
+    Session -->|"owns"| Uplink
+    Session -->|"owns"| Downlink
+    Session -->|"owns"| ServiceConnector
+
+    ClientConnector -->|"uplink media.Frame<br/>CodecBase64"| Uplink
+    Uplink -->|"PCM16LE audio"| ServiceConnector
+    ServiceConnector -->|"audio stream + response control"| AgentSession
+    AgentSession --> ASR
+    ASR --> Dialogue
+    Dialogue --> TTS
+    TTS -->|"TTS PCM"| AgentSession
+    AgentSession -->|"text delta + TTS PCM + done"| ServiceConnector
+    ServiceConnector -->|"downlink PCM16LE"| Downlink
+    Downlink -->|"G.711 A-law base64"| ClientConnector
+    ClientConnector -->|"response.* JSON"| Client
+
+    Uplink -.->|"VAD StageEvent"| Controller
+    Downlink -.->|"reference_tap PCM copy"| Controller
+    Controller -.->|"downlink reference for AEC"| Uplink
+    WSS -.->|"OnEvent / OnRTT / OnError"| Session
+
+    Log -->|"runtime logs"| RuntimeFiles
